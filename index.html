@@ -25,8 +25,9 @@
     user-select: none;
     cursor: default;
   }
-  canvas { position: fixed; display: block; }
-  #bg { inset: 0; width: 100%; height: 100%; }
+  canvas { position: fixed; display: block; will-change: transform; }
+  /* Oversized by 24px each side so parallax never reveals an edge */
+  #bg { left: -24px; top: -24px; width: calc(100% + 48px); height: calc(100% + 48px); }
 
   #hud {
     position: fixed;
@@ -107,24 +108,6 @@
     font-weight: 700;
     box-shadow: 0 0 18px rgba(255, 170, 90, 0.55);
   }
-  #progress {
-    margin-top: 14px;
-    height: 3px;
-    border-radius: 2px;
-    background: var(--line);
-    overflow: hidden;
-  }
-  #bar {
-    height: 100%;
-    background: linear-gradient(90deg, rgba(255, 180, 106, 0.35), var(--accent));
-    border-radius: 2px;
-  }
-  #left {
-    margin-top: 8px;
-    font-size: clamp(11px, 0.72vw, 13px);
-    color: var(--muted);
-    letter-spacing: 0.04em;
-  }
 </style>
 </head>
 <body>
@@ -139,8 +122,6 @@
   <section id="cal">
     <header><span id="month"></span><span id="year"></span></header>
     <div id="grid"></div>
-    <div id="progress"><div id="bar"></div></div>
-    <div id="left"></div>
   </section>
 </div>
 
@@ -153,15 +134,18 @@ const CONFIG = {
   weekStartsMonday: true,
   holeX: 0.40,             // black hole position, as a fraction of screen width
   holeY: 0.55,             // ...and height
-  holeSize: 0.085,         // shadow radius as a fraction of the shorter screen side
+  holeSize: 0.1,           // shadow radius as a fraction of the shorter screen side
   tilt: 0.2,               // how edge-on the disk is (0 = flat line, 1 = face-on)
   spin: 1,                 // rotation speed multiplier
-  renderScale: 0.75        // internal resolution of the animated layer (it is soft anyway)
+  parallax: 1,             // cursor parallax strength; 0 turns it off
+  renderScale: 0.85,       // internal resolution of the animated layer
+  maxLayerWidth: 1600      // hard cap on animated layer pixels, protects 4K screens
 };
+const BG_PAD = 24;         // must match the #bg CSS offset
 (() => {
   const q = new URLSearchParams(location.search);
   const num = (k, key) => { if (q.has(k) && !isNaN(+q.get(k))) CONFIG[key] = +q.get(k); };
-  num('fps', 'fps'); num('spin', 'spin'); num('size', 'holeSize'); num('x', 'holeX'); num('y', 'holeY');
+  num('fps', 'fps'); num('spin', 'spin'); num('parallax', 'parallax'); num('size', 'holeSize'); num('x', 'holeX'); num('y', 'holeY');
   if (q.has('h24')) CONFIG.use24Hour = q.get('h24') === '1';
   if (q.has('sec')) CONFIG.showSeconds = q.get('sec') === '1';
   if (q.has('mon')) CONFIG.weekStartsMonday = q.get('mon') === '1';
@@ -185,14 +169,15 @@ const bg = document.getElementById('bg');
 
 function drawBackground() {
   const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-  const w = innerWidth, h = innerHeight, m = Math.min(w, h);
+  const w = innerWidth + BG_PAD * 2, h = innerHeight + BG_PAD * 2, m = Math.min(w, h);
   bg.width = Math.round(w * dpr);
   bg.height = Math.round(h * dpr);
   const c = bg.getContext('2d');
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   const r = rng(20261102);
+  const hx = innerWidth * CONFIG.holeX + BG_PAD, hy = innerHeight * CONFIG.holeY + BG_PAD;
 
-  const base = c.createRadialGradient(w * CONFIG.holeX, h * CONFIG.holeY, 0, w * CONFIG.holeX, h * CONFIG.holeY, Math.max(w, h) * 0.85);
+  const base = c.createRadialGradient(hx, hy, 0, hx, hy, Math.max(w, h) * 0.85);
   base.addColorStop(0, '#0c0a1c');
   base.addColorStop(0.5, '#05061a');
   base.addColorStop(1, '#010208');
@@ -215,7 +200,7 @@ function drawBackground() {
     const rad = (0.04 + r() * 0.12) * m;
     const [cr, cg, cb] = hues[Math.floor(r() * hues.length)];
     const g = c.createRadialGradient(x, y, 0, x, y, rad);
-    g.addColorStop(0, `rgba(${cr},${cg},${cb},${0.02 + r() * 0.045})`);
+    g.addColorStop(0, `rgba(${cr},${cg},${cb},${0.03 + r() * 0.055})`);
     g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
     c.fillStyle = g;
     c.fillRect(x - rad, y - rad, rad * 2, rad * 2);
@@ -278,18 +263,29 @@ function drawBackground() {
 /* ---------- Black hole: textures built once, then rotated each frame ---------- */
 const hole = document.getElementById('hole');
 const hctx = hole.getContext('2d');
-let G = null; // geometry + textures
+let G = null; // geometry, textures and per-frame state
 
-function makeDisk(rIn, rOut, count, seed, edge) {
-  const s = Math.ceil(rOut * 2 + 4);
+function canvas(w, h) {
   const cv = document.createElement('canvas');
-  cv.width = cv.height = s;
+  cv.width = Math.ceil(w); cv.height = Math.ceil(h ?? w);
+  return cv;
+}
+
+/* A ring of gas: soft base glow, many thin streaks, a few bright clumps, optional hot inner edge. */
+function makeDisk(rIn, rOut, count, seed, edge, heatScale = 1) {
+  const cv = canvas(rOut * 2 + 4), s = cv.width;
   const c = cv.getContext('2d'), o = s / 2, r = rng(seed);
 
   const g = c.createRadialGradient(o, o, rIn, o, o, rOut);
-  g.addColorStop(0, 'rgba(255,238,215,0.55)');
-  g.addColorStop(0.25, 'rgba(255,170,90,0.30)');
-  g.addColorStop(0.7, 'rgba(200,80,40,0.10)');
+  if (edge) {   // hot inner rings start white
+    g.addColorStop(0, 'rgba(255,240,220,0.6)');
+    g.addColorStop(0.12, 'rgba(255,190,120,0.38)');
+  } else {      // cooler outer disk fades in so it doesn't stack into a white band
+    g.addColorStop(0, 'rgba(255,150,80,0)');
+    g.addColorStop(0.12, 'rgba(255,150,80,0.26)');
+  }
+  g.addColorStop(0.4, 'rgba(240,115,55,0.16)');
+  g.addColorStop(0.75, 'rgba(170,55,35,0.07)');
   g.addColorStop(1, 'rgba(120,30,20,0)');
   c.fillStyle = g;
   c.beginPath();
@@ -300,56 +296,54 @@ function makeDisk(rIn, rOut, count, seed, edge) {
   c.globalCompositeOperation = 'lighter';
   c.lineCap = 'round';
   const lw = Math.max(0.6, rIn * 0.02);
-  for (let i = 0; i < count; i++) {
-    const t = Math.pow(r(), 1.5);
-    const rad = rIn + (rOut - rIn) * t;
-    const a0 = r() * TAU, span = 0.15 + r() * 0.9;
-    const heat = 1 - t;
-    const cr = 255, cg = Math.round(70 + 170 * heat), cb = Math.round(30 + 180 * heat * heat);
-    const alpha = (0.05 + 0.22 * r()) * (0.35 + 0.65 * heat);
-    c.strokeStyle = `rgba(${cr},${cg},${cb},${alpha})`;
-    c.lineWidth = lw * (0.5 + r() * 2);
+  const streak = (t, span, width, alpha) => {
+    const rad = rIn + (rOut - rIn) * t, a0 = r() * TAU, heat = (1 - t) * heatScale;
+    const cg = Math.round(80 + 170 * heat), cb = Math.round(35 + 190 * heat * heat);
+    c.strokeStyle = `rgba(255,${cg},${cb},${alpha * (0.35 + 0.65 * heat)})`;
+    c.lineWidth = width;
     c.beginPath();
     c.arc(o, o, rad, a0, a0 + span);
     c.stroke();
-  }
+  };
+  for (let i = 0; i < count; i++) streak(Math.pow(r(), 1.5), 0.15 + r() * 1.0, lw * (0.5 + r() * 1.6), 0.04 + 0.2 * r());
+  for (let i = 0; i < count / 12; i++) streak(Math.pow(r(), 2), 0.08 + r() * 0.3, lw * (0.8 + r() * 1.2), 0.25 + 0.3 * r());
+
   if (edge) {
-    c.strokeStyle = 'rgba(255,245,230,0.55)';
-    c.lineWidth = lw * 2;
-    c.beginPath();
-    c.arc(o, o, rIn + lw, 0, TAU);
-    c.stroke();
+    c.strokeStyle = 'rgba(255,220,170,0.25)';
+    c.lineWidth = lw * 5;
+    c.beginPath(); c.arc(o, o, rIn + lw * 3, 0, TAU); c.stroke();
+    c.strokeStyle = 'rgba(255,252,245,0.95)';
+    c.lineWidth = lw * 2.2;
+    c.beginPath(); c.arc(o, o, rIn + lw, 0, TAU); c.stroke();
   }
   return cv;
 }
 
 function makeGlow(R) {
-  const s = Math.ceil(R * 2);
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = s;
-  const c = cv.getContext('2d'), o = s / 2;
+  const cv = canvas(R * 2), c = cv.getContext('2d'), o = R;
   const g = c.createRadialGradient(o, o, 0, o, o, R);
-  g.addColorStop(0, 'rgba(255,150,70,0.22)');
-  g.addColorStop(0.35, 'rgba(200,90,60,0.08)');
-  g.addColorStop(1, 'rgba(120,40,60,0)');
+  g.addColorStop(0, 'rgba(255,160,80,0.32)');
+  g.addColorStop(0.2, 'rgba(255,110,55,0.14)');
+  g.addColorStop(0.45, 'rgba(190,70,70,0.06)');
+  g.addColorStop(0.7, 'rgba(160,55,75,0.022)');
+  g.addColorStop(0.88, 'rgba(130,45,80,0.006)');
+  g.addColorStop(1, 'rgba(120,40,80,0)');
   c.fillStyle = g;
-  c.fillRect(0, 0, s, s);
+  c.fillRect(0, 0, cv.width, cv.height);
   return cv;
 }
 
 function makePhotonRing(R) {
-  const s = Math.ceil(R * 3);
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = s;
-  const c = cv.getContext('2d'), o = s / 2;
-  const g = c.createRadialGradient(o, o, R * 0.98, o, o, R * 1.35);
-  g.addColorStop(0, 'rgba(255,240,220,0.9)');
-  g.addColorStop(0.08, 'rgba(255,200,140,0.45)');
-  g.addColorStop(1, 'rgba(255,120,60,0)');
+  const cv = canvas(R * 3), c = cv.getContext('2d'), o = cv.width / 2;
+  const g = c.createRadialGradient(o, o, R * 0.99, o, o, R * 1.4);
+  g.addColorStop(0, 'rgba(255,252,245,1)');
+  g.addColorStop(0.04, 'rgba(255,228,180,0.75)');
+  g.addColorStop(0.2, 'rgba(255,160,90,0.22)');
+  g.addColorStop(1, 'rgba(255,110,60,0)');
   c.fillStyle = g;
   c.beginPath();
-  c.arc(o, o, R * 1.35, 0, TAU);
-  c.arc(o, o, R * 0.98, 0, TAU, true);
+  c.arc(o, o, R * 1.4, 0, TAU);
+  c.arc(o, o, R * 0.99, 0, TAU, true);
   c.fill();
   return cv;
 }
@@ -357,64 +351,106 @@ function makePhotonRing(R) {
 function setupHole() {
   const w = innerWidth, h = innerHeight, m = Math.min(w, h);
   const rs = m * CONFIG.holeSize;                     // shadow radius in CSS px
-  const cssW = rs * 4.4 * 2.3, cssH = rs * 7;
-  const scale = Math.min(window.devicePixelRatio || 1, 1.5) * CONFIG.renderScale;
-  hole.width = Math.round(cssW * scale);
-  hole.height = Math.round(cssH * scale);
+  const cssW = rs * 4.6 * 2.3, cssH = rs * 7.5;
+  const scale = Math.min(Math.min(window.devicePixelRatio || 1, 1.5) * CONFIG.renderScale,
+                         CONFIG.maxLayerWidth / cssW);
+  const W = Math.round(cssW * scale), H = Math.round(cssH * scale);
+  hole.width = W; hole.height = H;
   Object.assign(hole.style, {
     width: cssW + 'px', height: cssH + 'px',
     left: (w * CONFIG.holeX - cssW / 2) + 'px',
     top: (h * CONFIG.holeY - cssH / 2) + 'px'
   });
   const R = rs * scale;                               // shadow radius in canvas px
+
+  const ring = makeDisk(R * 1.05, R * 1.5, 450, 33, true);
+  // Offscreen layers sized to just what they hold, to keep per-frame fill cost low
+  const diskLayer = canvas(W, R * 2.2);
+  const ringLayer = canvas(ring.width + R * 0.4);
+  beam(diskLayer, 0, W);
+  beam(ringLayer, (W - ringLayer.width) / 2, W);
+
   G = {
-    R,
-    inner: makeDisk(R * 1.3, R * 2.5, 900, 11, true),
-    outer: makeDisk(R * 2.3, R * 4.4, 1300, 22, false),
-    ring: makeDisk(R * 1.05, R * 1.7, 500, 33, true),
-    glow: makeGlow(R * 5),
+    R, W, H, ring, diskLayer, ringLayer,
+    inner: makeDisk(R * 1.35, R * 2.6, 1100, 11, true),
+    outer: makeDisk(R * 2.3, R * 4.6, 1600, 22, false, 0.6),
+    glow: makeGlow(R * 5.2),
     photon: makePhotonRing(R),
-    aIn: 0, aOut: 0, aRing: 0
+    aIn: 0, aOut: 0, aRing: 0, t: 0
   };
 }
 
-function drawDisk(c, tex, ang, cx, cy) {
+/* Doppler beaming: gas moving toward us (left) looks hotter, the receding side (right) dimmer.
+   Gradients are in each layer's own coordinates; offset = layer's left edge within the main canvas. */
+function beam(layer, offset, W) {
+  const c = layer.getContext('2d');
+  const boost = c.createLinearGradient(W * 0.12 - offset, 0, W * 0.5 - offset, 0);
+  boost.addColorStop(0, 'rgba(255,244,225,0.34)');
+  boost.addColorStop(1, 'rgba(255,248,236,0)');
+  const dim = c.createLinearGradient(W * 0.45 - offset, 0, W * 0.85 - offset, 0);
+  dim.addColorStop(0, 'rgba(0,0,0,0)');
+  dim.addColorStop(1, 'rgba(0,0,0,0.72)');
+  layer.boost = boost; layer.dim = dim;
+}
+
+function drawTex(c, tex, ang, sy) {
   c.save();
-  c.translate(cx, cy);
-  c.scale(1, CONFIG.tilt);
+  c.translate(c.canvas.width / 2, c.canvas.height / 2);
+  c.scale(1, sy);
   c.rotate(ang);
   c.drawImage(tex, -tex.width / 2, -tex.height / 2);
   c.restore();
 }
 
+/* Draw into an offscreen layer, then apply the beaming tint/dim to that layer only. */
+function compose(layer, draw) {
+  const c = layer.getContext('2d'), w = layer.width, h = layer.height;
+  c.globalCompositeOperation = 'source-over';
+  c.clearRect(0, 0, w, h);
+  c.globalCompositeOperation = 'lighter';
+  draw(c);
+  c.globalCompositeOperation = 'source-atop';
+  c.fillStyle = layer.boost; c.fillRect(0, 0, w, h);
+  c.globalCompositeOperation = 'destination-out';
+  c.fillStyle = layer.dim; c.fillRect(0, 0, w, h);
+}
+
 function drawHole() {
-  const c = hctx, W = hole.width, H = hole.height, cx = W / 2, cy = H / 2, R = G.R;
+  const c = hctx, W = G.W, H = G.H, cx = W / 2, cy = H / 2, R = G.R;
+
+  compose(G.diskLayer, (d) => {
+    drawTex(d, G.outer, G.aOut, CONFIG.tilt);
+    drawTex(d, G.inner, G.aIn, CONFIG.tilt);
+  });
+  compose(G.ringLayer, (d) => {
+    // Far-side light bent over the top: shifted up and slightly stretched so the top arc is thicker
+    d.save();
+    d.translate(0, -R * 0.07);
+    drawTex(d, G.ring, G.aRing, 1.05);
+    d.restore();
+  });
+
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
   c.clearRect(0, 0, W, H);
 
   c.globalCompositeOperation = 'lighter';
+  c.globalAlpha = 0.9 + 0.1 * Math.sin(G.t * 0.5);   // slow breathing glow
   c.save();
   c.translate(cx, cy);
-  c.scale(1, 0.6);
+  c.scale(1, 0.62);
   c.drawImage(G.glow, -G.glow.width / 2, -G.glow.height / 2);
   c.restore();
+  c.globalAlpha = 1;
 
   // Far side of the disk (behind the hole)
+  const dy = cy - G.diskLayer.height / 2;
   c.save();
   c.beginPath(); c.rect(0, 0, W, cy); c.clip();
-  drawDisk(c, G.outer, G.aOut, cx, cy);
-  drawDisk(c, G.inner, G.aIn, cx, cy);
+  c.drawImage(G.diskLayer, 0, dy);
   c.restore();
 
-  // Light from the far side bent up and around the hole
-  c.save();
-  c.translate(cx, cy - R * 0.04);
-  c.rotate(G.aRing);
-  c.globalAlpha = 0.85;
-  c.drawImage(G.ring, -G.ring.width / 2, -G.ring.height / 2);
-  c.restore();
-  c.globalAlpha = 1;
+  c.drawImage(G.ringLayer, cx - G.ringLayer.width / 2, cy - G.ringLayer.height / 2);
 
   // Event horizon shadow
   c.globalCompositeOperation = 'source-over';
@@ -427,10 +463,30 @@ function drawHole() {
   // Near side of the disk (in front of the hole)
   c.save();
   c.beginPath(); c.rect(0, cy, W, H - cy); c.clip();
-  drawDisk(c, G.outer, G.aOut, cx, cy);
-  drawDisk(c, G.inner, G.aIn, cx, cy);
+  c.drawImage(G.diskLayer, 0, dy);
   c.restore();
   c.globalCompositeOperation = 'source-over';
+}
+
+/* ---------- Cursor parallax (needs Lively's mouse input setting turned on) ---------- */
+const P = { tx: 0, ty: 0, x: 0, y: 0, applied: '' };
+addEventListener('mousemove', (e) => {
+  P.tx = (e.clientX / innerWidth - 0.5) * 2;
+  P.ty = (e.clientY / innerHeight - 0.5) * 2;
+});
+document.documentElement.addEventListener('mouseleave', () => { P.tx = 0; P.ty = 0; });
+
+function updateParallax(dt) {
+  const k = 1 - Math.exp(-dt * 2.5);            // smooth easing toward the cursor
+  P.x += (P.tx - P.x) * k;
+  P.y += (P.ty - P.y) * k;
+  const s = CONFIG.parallax;
+  const key = (P.x * s).toFixed(3) + ',' + (P.y * s).toFixed(3);
+  if (key === P.applied) return;                // skip style writes when settled
+  P.applied = key;
+  // Stars are "far" and move a little; the black hole is "nearer" and moves more.
+  bg.style.transform = `translate3d(${(-P.x * 14 * s).toFixed(2)}px, ${(-P.y * 10 * s).toFixed(2)}px, 0)`;
+  hole.style.transform = `translate3d(${(-P.x * 34 * s).toFixed(2)}px, ${(-P.y * 22 * s).toFixed(2)}px, 0)`;
 }
 
 /* ---------- Frame loop, capped to CONFIG.fps ---------- */
@@ -442,10 +498,12 @@ function frame(now) {
   if (elapsed < interval - 1) return;
   const dt = Math.min(elapsed, 250) / 1000;
   last = now;
-  G.aIn += dt * 0.16 * CONFIG.spin;
-  G.aOut += dt * 0.07 * CONFIG.spin;
-  G.aRing += dt * 0.11 * CONFIG.spin;
+  G.t += dt;
+  G.aIn += dt * 0.2 * CONFIG.spin;
+  G.aOut += dt * 0.08 * CONFIG.spin;
+  G.aRing += dt * 0.13 * CONFIG.spin;
   drawHole();
+  updateParallax(dt);
 }
 function start() { if (!rafId) { last = performance.now(); rafId = requestAnimationFrame(frame); } }
 function stop() { cancelAnimationFrame(rafId); rafId = 0; }
@@ -489,10 +547,6 @@ function buildCalendar(d) {
     grid.appendChild(el);
   }
 
-  $('bar').style.width = (today / days * 100).toFixed(1) + '%';
-  const left = days - today;
-  $('left').textContent = left === 0 ? `Last day of ${monthName}`
-    : `${left} day${left === 1 ? '' : 's'} left in ${monthName}`;
 }
 
 function tick() {

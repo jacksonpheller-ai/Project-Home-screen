@@ -13,6 +13,10 @@ An animated black hole and galaxy desktop wallpaper with a clock and a monthly c
 
 In Lively's settings, under Performance, set it to pause the wallpaper when on battery and when another app is fullscreen or maximized.
 
+## Cursor parallax
+
+The star field and black hole shift slightly as the mouse moves. This only works if Lively passes mouse input to the wallpaper; turn that on in Lively's settings. The wallpaper only sees the cursor over empty desktop, not over windows or icons.
+
 ## Customising
 
 Edit the `CONFIG` block near the top of the `<script>` in `index.html`:
@@ -24,5 +28,6 @@ Edit the `CONFIG` block near the top of the `<script>` in `index.html`:
 | `showSeconds` | false | Show seconds |
 | `weekStartsMonday` | true | Calendar week start |
 | `holeX`, `holeY` | 0.40, 0.55 | Black hole position (fraction of screen) |
-| `holeSize` | 0.085 | Black hole size |
+| `holeSize` | 0.1 | Black hole size |
 | `spin` | 1 | Rotation speed multiplier |
+| `parallax` | 1 | Cursor parallax strength (0 = off) |
