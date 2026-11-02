@@ -20,9 +20,9 @@ Edit the `CONFIG` block near the top of the `<script>` in `index.html`:
 | Setting | Default | What it does |
 |---|---|---|
 | `fps` | 30 | Frame cap. Lower uses less power. |
-| `use24Hour` | false | 24-hour clock |
+| `use24Hour` | true | 24-hour clock |
 | `showSeconds` | false | Show seconds |
-| `weekStartsMonday` | false | Calendar week start |
+| `weekStartsMonday` | true | Calendar week start |
 | `holeX`, `holeY` | 0.40, 0.55 | Black hole position (fraction of screen) |
 | `holeSize` | 0.085 | Black hole size |
 | `spin` | 1 | Rotation speed multiplier |
