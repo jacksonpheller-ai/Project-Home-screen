@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Black Hole Wallpaper</title>
+<style>
+  :root {
+    --text: #e9ecf8;
+    --muted: rgba(233, 236, 248, 0.6);
+    --faint: rgba(233, 236, 248, 0.26);
+    --accent: #ffb46a;
+    --panel: rgba(6, 8, 18, 0.45);
+    --line: rgba(255, 255, 255, 0.08);
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #02030a;
+  }
+  body {
+    font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    user-select: none;
+    cursor: default;
+  }
+  canvas { position: fixed; display: block; }
+  #bg { inset: 0; width: 100%; height: 100%; }
+
+  #hud {
+    position: fixed;
+    top: clamp(24px, 4vh, 56px);
+    right: clamp(24px, 3vw, 64px);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: clamp(16px, 2.2vh, 28px);
+    text-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+  }
+  #time {
+    font-size: clamp(56px, 6.2vw, 124px);
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  #ampm {
+    font-size: 0.28em;
+    font-weight: 400;
+    margin-left: 0.2em;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+  #date {
+    margin-top: 10px;
+    font-size: clamp(13px, 1.05vw, 19px);
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-align: right;
+  }
+
+  #cal {
+    width: clamp(240px, 16vw, 320px);
+    padding: 16px 18px 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    text-shadow: none;
+  }
+  #cal header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 12px;
+  }
+  #month { font-size: clamp(15px, 1.1vw, 19px); font-weight: 600; letter-spacing: 0.02em; }
+  #year { font-size: clamp(12px, 0.85vw, 15px); color: var(--muted); letter-spacing: 0.08em; }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    row-gap: 3px;
+    text-align: center;
+    font-size: clamp(12px, 0.82vw, 15px);
+    font-variant-numeric: tabular-nums;
+  }
+  .dow {
+    color: var(--faint);
+    font-size: 0.72em;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding-bottom: 6px;
+  }
+  .day {
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    width: 86%;
+    margin: 0 auto;
+  }
+  .day.past { color: var(--faint); }
+  .day.today {
+    background: var(--accent);
+    color: #1c0e02;
+    font-weight: 700;
+    box-shadow: 0 0 18px rgba(255, 170, 90, 0.55);
+  }
+  #progress {
+    margin-top: 14px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--line);
+    overflow: hidden;
+  }
+  #bar {
+    height: 100%;
+    background: linear-gradient(90deg, rgba(255, 180, 106, 0.35), var(--accent));
+    border-radius: 2px;
+  }
+  #left {
+    margin-top: 8px;
+    font-size: clamp(11px, 0.72vw, 13px);
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<canvas id="hole"></canvas>
+
+<div id="hud">
+  <div>
+    <div id="time"><span id="hm"></span><span id="ampm"></span></div>
+    <div id="date"></div>
+  </div>
+  <section id="cal">
+    <header><span id="month"></span><span id="year"></span></header>
+    <div id="grid"></div>
+    <div id="progress"><div id="bar"></div></div>
+    <div id="left"></div>
+  </section>
+</div>
+
+<script>
+/* ---------- Settings: edit these, or add ?fps=20&h24=1 etc. to the URL ---------- */
+const CONFIG = {
+  fps: 30,                 // animation frame cap; lower = less power (20 is still smooth)
+  use24Hour: false,        // true for 14:05, false for 2:05 PM
+  showSeconds: false,
+  weekStartsMonday: false,
+  holeX: 0.40,             // black hole position, as a fraction of screen width
+  holeY: 0.55,             // ...and height
+  holeSize: 0.085,         // shadow radius as a fraction of the shorter screen side
+  tilt: 0.2,               // how edge-on the disk is (0 = flat line, 1 = face-on)
+  spin: 1,                 // rotation speed multiplier
+  renderScale: 0.75        // internal resolution of the animated layer (it is soft anyway)
+};
+(() => {
+  const q = new URLSearchParams(location.search);
+  const num = (k, key) => { if (q.has(k) && !isNaN(+q.get(k))) CONFIG[key] = +q.get(k); };
+  num('fps', 'fps'); num('spin', 'spin'); num('size', 'holeSize'); num('x', 'holeX'); num('y', 'holeY');
+  if (q.has('h24')) CONFIG.use24Hour = q.get('h24') === '1';
+  if (q.has('sec')) CONFIG.showSeconds = q.get('sec') === '1';
+  if (q.has('mon')) CONFIG.weekStartsMonday = q.get('mon') === '1';
+})();
+
+const TAU = Math.PI * 2;
+
+/* Seeded random numbers so the star field looks the same every time it loads. */
+function rng(seed) {
+  return () => {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function gauss(r) { return (r() + r() + r() + r() - 2) / 2; }
+
+/* ---------- Static background: drawn once (and again only on resize) ---------- */
+const bg = document.getElementById('bg');
+
+function drawBackground() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = innerWidth, h = innerHeight, m = Math.min(w, h);
+  bg.width = Math.round(w * dpr);
+  bg.height = Math.round(h * dpr);
+  const c = bg.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const r = rng(20261102);
+
+  const base = c.createRadialGradient(w * CONFIG.holeX, h * CONFIG.holeY, 0, w * CONFIG.holeX, h * CONFIG.holeY, Math.max(w, h) * 0.85);
+  base.addColorStop(0, '#0c0a1c');
+  base.addColorStop(0.5, '#05061a');
+  base.addColorStop(1, '#010208');
+  c.fillStyle = base;
+  c.fillRect(0, 0, w, h);
+
+  // Galaxy band running diagonally across the screen
+  const ax = -0.1 * w, ay = 0.95 * h, bx = 1.1 * w, by = 0.08 * h;
+  const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy);
+  const nx = -dy / len, ny = dx / len;
+  const bandPoint = (spread) => {
+    const t = r(), off = gauss(r) * spread * m;
+    return [ax + dx * t + nx * off, ay + dy * t + ny * off];
+  };
+  const hues = [[120, 80, 210], [60, 90, 210], [200, 100, 170], [90, 150, 230], [230, 140, 120]];
+
+  c.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 170; i++) {
+    const [x, y] = bandPoint(0.12);
+    const rad = (0.04 + r() * 0.12) * m;
+    const [cr, cg, cb] = hues[Math.floor(r() * hues.length)];
+    const g = c.createRadialGradient(x, y, 0, x, y, rad);
+    g.addColorStop(0, `rgba(${cr},${cg},${cb},${0.02 + r() * 0.045})`);
+    g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+    c.fillStyle = g;
+    c.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+
+  // Dark dust lanes along the band
+  c.globalCompositeOperation = 'source-over';
+  for (let i = 0; i < 70; i++) {
+    const [x, y] = bandPoint(0.035);
+    const rad = (0.02 + r() * 0.06) * m;
+    const g = c.createRadialGradient(x, y, 0, x, y, rad);
+    g.addColorStop(0, `rgba(2,2,8,${0.12 + r() * 0.18})`);
+    g.addColorStop(1, 'rgba(2,2,8,0)');
+    c.fillStyle = g;
+    c.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+
+  // Stars: scattered field plus a denser population inside the band
+  c.globalCompositeOperation = 'lighter';
+  const starColors = ['255,255,255', '200,220,255', '255,236,210', '170,190,255', '255,210,180'];
+  const star = (x, y) => {
+    const size = Math.pow(r(), 4) * 1.6 + 0.3;
+    const col = starColors[Math.floor(r() * starColors.length)];
+    const a = 0.35 + r() * 0.65;
+    if (size > 1.1) {
+      const g = c.createRadialGradient(x, y, 0, x, y, size * 4);
+      g.addColorStop(0, `rgba(${col},${a * 0.5})`);
+      g.addColorStop(1, `rgba(${col},0)`);
+      c.fillStyle = g;
+      c.fillRect(x - size * 4, y - size * 4, size * 8, size * 8);
+    }
+    c.fillStyle = `rgba(${col},${a})`;
+    c.beginPath();
+    c.arc(x, y, size, 0, TAU);
+    c.fill();
+  };
+  const field = Math.round((w * h) / 1500);
+  for (let i = 0; i < field; i++) star(r() * w, r() * h);
+  for (let i = 0; i < field * 0.9; i++) star(...bandPoint(0.09));
+
+  // A few bright stars with diffraction spikes
+  for (let i = 0; i < 7; i++) {
+    const x = r() * w, y = r() * h, L = (6 + r() * 10) * (m / 1080);
+    const g = c.createRadialGradient(x, y, 0, x, y, L);
+    g.addColorStop(0, 'rgba(220,230,255,0.9)');
+    g.addColorStop(0.15, 'rgba(200,215,255,0.25)');
+    g.addColorStop(1, 'rgba(200,215,255,0)');
+    c.fillStyle = g;
+    c.fillRect(x - L, y - L, L * 2, L * 2);
+    c.strokeStyle = 'rgba(210,225,255,0.35)';
+    c.lineWidth = 0.6;
+    c.beginPath();
+    c.moveTo(x - L * 1.6, y); c.lineTo(x + L * 1.6, y);
+    c.moveTo(x, y - L * 1.6); c.lineTo(x, y + L * 1.6);
+    c.stroke();
+  }
+  c.globalCompositeOperation = 'source-over';
+}
+
+/* ---------- Black hole: textures built once, then rotated each frame ---------- */
+const hole = document.getElementById('hole');
+const hctx = hole.getContext('2d');
+let G = null; // geometry + textures
+
+function makeDisk(rIn, rOut, count, seed, edge) {
+  const s = Math.ceil(rOut * 2 + 4);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = s;
+  const c = cv.getContext('2d'), o = s / 2, r = rng(seed);
+
+  const g = c.createRadialGradient(o, o, rIn, o, o, rOut);
+  g.addColorStop(0, 'rgba(255,238,215,0.55)');
+  g.addColorStop(0.25, 'rgba(255,170,90,0.30)');
+  g.addColorStop(0.7, 'rgba(200,80,40,0.10)');
+  g.addColorStop(1, 'rgba(120,30,20,0)');
+  c.fillStyle = g;
+  c.beginPath();
+  c.arc(o, o, rOut, 0, TAU);
+  c.arc(o, o, rIn, 0, TAU, true);
+  c.fill();
+
+  c.globalCompositeOperation = 'lighter';
+  c.lineCap = 'round';
+  const lw = Math.max(0.6, rIn * 0.02);
+  for (let i = 0; i < count; i++) {
+    const t = Math.pow(r(), 1.5);
+    const rad = rIn + (rOut - rIn) * t;
+    const a0 = r() * TAU, span = 0.15 + r() * 0.9;
+    const heat = 1 - t;
+    const cr = 255, cg = Math.round(70 + 170 * heat), cb = Math.round(30 + 180 * heat * heat);
+    const alpha = (0.05 + 0.22 * r()) * (0.35 + 0.65 * heat);
+    c.strokeStyle = `rgba(${cr},${cg},${cb},${alpha})`;
+    c.lineWidth = lw * (0.5 + r() * 2);
+    c.beginPath();
+    c.arc(o, o, rad, a0, a0 + span);
+    c.stroke();
+  }
+  if (edge) {
+    c.strokeStyle = 'rgba(255,245,230,0.55)';
+    c.lineWidth = lw * 2;
+    c.beginPath();
+    c.arc(o, o, rIn + lw, 0, TAU);
+    c.stroke();
+  }
+  return cv;
+}
+
+function makeGlow(R) {
+  const s = Math.ceil(R * 2);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = s;
+  const c = cv.getContext('2d'), o = s / 2;
+  const g = c.createRadialGradient(o, o, 0, o, o, R);
+  g.addColorStop(0, 'rgba(255,150,70,0.22)');
+  g.addColorStop(0.35, 'rgba(200,90,60,0.08)');
+  g.addColorStop(1, 'rgba(120,40,60,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, s, s);
+  return cv;
+}
+
+function makePhotonRing(R) {
+  const s = Math.ceil(R * 3);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = s;
+  const c = cv.getContext('2d'), o = s / 2;
+  const g = c.createRadialGradient(o, o, R * 0.98, o, o, R * 1.35);
+  g.addColorStop(0, 'rgba(255,240,220,0.9)');
+  g.addColorStop(0.08, 'rgba(255,200,140,0.45)');
+  g.addColorStop(1, 'rgba(255,120,60,0)');
+  c.fillStyle = g;
+  c.beginPath();
+  c.arc(o, o, R * 1.35, 0, TAU);
+  c.arc(o, o, R * 0.98, 0, TAU, true);
+  c.fill();
+  return cv;
+}
+
+function setupHole() {
+  const w = innerWidth, h = innerHeight, m = Math.min(w, h);
+  const rs = m * CONFIG.holeSize;                     // shadow radius in CSS px
+  const cssW = rs * 4.4 * 2.3, cssH = rs * 7;
+  const scale = Math.min(window.devicePixelRatio || 1, 1.5) * CONFIG.renderScale;
+  hole.width = Math.round(cssW * scale);
+  hole.height = Math.round(cssH * scale);
+  Object.assign(hole.style, {
+    width: cssW + 'px', height: cssH + 'px',
+    left: (w * CONFIG.holeX - cssW / 2) + 'px',
+    top: (h * CONFIG.holeY - cssH / 2) + 'px'
+  });
+  const R = rs * scale;                               // shadow radius in canvas px
+  G = {
+    R,
+    inner: makeDisk(R * 1.3, R * 2.5, 900, 11, true),
+    outer: makeDisk(R * 2.3, R * 4.4, 1300, 22, false),
+    ring: makeDisk(R * 1.05, R * 1.7, 500, 33, true),
+    glow: makeGlow(R * 5),
+    photon: makePhotonRing(R),
+    aIn: 0, aOut: 0, aRing: 0
+  };
+}
+
+function drawDisk(c, tex, ang, cx, cy) {
+  c.save();
+  c.translate(cx, cy);
+  c.scale(1, CONFIG.tilt);
+  c.rotate(ang);
+  c.drawImage(tex, -tex.width / 2, -tex.height / 2);
+  c.restore();
+}
+
+function drawHole() {
+  const c = hctx, W = hole.width, H = hole.height, cx = W / 2, cy = H / 2, R = G.R;
+  c.globalCompositeOperation = 'source-over';
+  c.globalAlpha = 1;
+  c.clearRect(0, 0, W, H);
+
+  c.globalCompositeOperation = 'lighter';
+  c.save();
+  c.translate(cx, cy);
+  c.scale(1, 0.6);
+  c.drawImage(G.glow, -G.glow.width / 2, -G.glow.height / 2);
+  c.restore();
+
+  // Far side of the disk (behind the hole)
+  c.save();
+  c.beginPath(); c.rect(0, 0, W, cy); c.clip();
+  drawDisk(c, G.outer, G.aOut, cx, cy);
+  drawDisk(c, G.inner, G.aIn, cx, cy);
+  c.restore();
+
+  // Light from the far side bent up and around the hole
+  c.save();
+  c.translate(cx, cy - R * 0.04);
+  c.rotate(G.aRing);
+  c.globalAlpha = 0.85;
+  c.drawImage(G.ring, -G.ring.width / 2, -G.ring.height / 2);
+  c.restore();
+  c.globalAlpha = 1;
+
+  // Event horizon shadow
+  c.globalCompositeOperation = 'source-over';
+  c.fillStyle = '#000';
+  c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.fill();
+
+  c.globalCompositeOperation = 'lighter';
+  c.drawImage(G.photon, cx - G.photon.width / 2, cy - G.photon.height / 2);
+
+  // Near side of the disk (in front of the hole)
+  c.save();
+  c.beginPath(); c.rect(0, cy, W, H - cy); c.clip();
+  drawDisk(c, G.outer, G.aOut, cx, cy);
+  drawDisk(c, G.inner, G.aIn, cx, cy);
+  c.restore();
+  c.globalCompositeOperation = 'source-over';
+}
+
+/* ---------- Frame loop, capped to CONFIG.fps ---------- */
+let last = 0, rafId = 0;
+function frame(now) {
+  rafId = requestAnimationFrame(frame);
+  const interval = 1000 / CONFIG.fps;
+  const elapsed = now - last;
+  if (elapsed < interval - 1) return;
+  const dt = Math.min(elapsed, 250) / 1000;
+  last = now;
+  G.aIn += dt * 0.16 * CONFIG.spin;
+  G.aOut += dt * 0.07 * CONFIG.spin;
+  G.aRing += dt * 0.11 * CONFIG.spin;
+  drawHole();
+}
+function start() { if (!rafId) { last = performance.now(); rafId = requestAnimationFrame(frame); } }
+function stop() { cancelAnimationFrame(rafId); rafId = 0; }
+document.addEventListener('visibilitychange', () => (document.hidden ? stop() : start()));
+
+let resizeTimer = 0;
+addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { drawBackground(); setupHole(); drawHole(); }, 200);
+});
+
+/* ---------- Clock and calendar ---------- */
+const $ = (id) => document.getElementById(id);
+const pad = (n) => String(n).padStart(2, '0');
+let lastTime = '', lastDay = '';
+
+function buildCalendar(d) {
+  const y = d.getFullYear(), mo = d.getMonth(), today = d.getDate();
+  const monthName = d.toLocaleDateString(undefined, { month: 'long' });
+  $('month').textContent = monthName;
+  $('year').textContent = y;
+
+  const grid = $('grid');
+  grid.replaceChildren();
+  const offset = CONFIG.weekStartsMonday ? 1 : 0;
+  for (let i = 0; i < 7; i++) {
+    const ref = new Date(2023, 0, 1 + ((i + offset) % 7)); // Jan 1 2023 was a Sunday
+    const el = document.createElement('div');
+    el.className = 'dow';
+    el.textContent = ref.toLocaleDateString(undefined, { weekday: 'short' });
+    grid.appendChild(el);
+  }
+  const firstDow = new Date(y, mo, 1).getDay();
+  const lead = (firstDow - offset + 7) % 7;
+  for (let i = 0; i < lead; i++) grid.appendChild(document.createElement('div'));
+  const days = new Date(y, mo + 1, 0).getDate();
+  for (let n = 1; n <= days; n++) {
+    const el = document.createElement('div');
+    el.className = 'day' + (n < today ? ' past' : n === today ? ' today' : '');
+    el.textContent = n;
+    grid.appendChild(el);
+  }
+
+  $('bar').style.width = (today / days * 100).toFixed(1) + '%';
+  const left = days - today;
+  $('left').textContent = left === 0 ? `Last day of ${monthName}`
+    : `${left} day${left === 1 ? '' : 's'} left in ${monthName}`;
+}
+
+function tick() {
+  const d = new Date();
+  let h = d.getHours(), ampm = '';
+  if (!CONFIG.use24Hour) { ampm = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12; }
+  const t = (CONFIG.use24Hour ? pad(h) : h) + ':' + pad(d.getMinutes()) +
+            (CONFIG.showSeconds ? ':' + pad(d.getSeconds()) : '');
+  if (t !== lastTime) {
+    lastTime = t;
+    $('hm').textContent = t;
+    $('ampm').textContent = ampm;
+  }
+  const key = d.toDateString();
+  if (key !== lastDay) {   // runs at load and once each midnight
+    lastDay = key;
+    $('date').textContent = d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    buildCalendar(d);
+  }
+}
+
+/* ---------- Go ---------- */
+drawBackground();
+setupHole();
+drawHole();
+start();
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>
