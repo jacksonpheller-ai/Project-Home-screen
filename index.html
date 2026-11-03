@@ -38,12 +38,14 @@
     text-shadow: 0 0 10px rgba(243, 233, 208, 0.95), 0 0 3px rgba(243, 233, 208, 0.95);
   }
   #time {
+    text-align: right;   /* right-aligned like the date, even when the date line is the wider of the two */
     font-size: clamp(56px, 6.2vw, 124px);
     font-weight: 400;
     letter-spacing: -0.02em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
   }
+  #ampm:empty { display: none; }   /* 24-hour clock: no empty AM/PM slot pushing the digits left */
   #ampm {
     font-size: 0.28em;
     font-weight: 400;
@@ -107,6 +109,44 @@
     box-shadow: none;
   }
 
+
+  /* ---------- Night mode (lamplit): the same layout, dark umber panels and pale-gold ink ---------- */
+  body.night {
+    --text: #ecdcb8; --muted: rgba(236, 220, 184, 0.75); --faint: rgba(236, 220, 184, 0.42);
+    --accent: #b5412c; --panel: rgba(34, 30, 24, 0.92); --line: rgba(201, 168, 106, 0.38);
+  }
+  html:has(body.night), body.night, body.night #map, body.night #map2d { background: #25302d; }
+  body.night #hud { text-shadow: 0 0 10px rgba(18, 16, 12, 0.95), 0 0 3px rgba(18, 16, 12, 0.95); }
+  body.night #labels > div { -webkit-text-stroke-color: rgba(22, 20, 16, 0.85); }
+  body.night .cl { color: rgba(230, 210, 166, 0.72); -webkit-text-stroke: 2px rgba(22, 20, 16, 0.55); }
+  body.night .lbl { color: rgba(236, 222, 190, 0.92); }
+  body.night .lbl.cap { color: rgba(246, 234, 204, 0.98); }
+  body.night .lbl i { background: rgba(236, 222, 190, 0.9); box-shadow: 0 0 0 1px rgba(22, 20, 16, 0.7); }
+  body.night .lbl.cap i { background: transparent; border-color: rgba(236, 222, 190, 0.95); box-shadow: 0 0 0 1px rgba(22, 20, 16, 0.8); }
+  body.night .plbl { color: #f09a76; }
+  body.night .pin .pd { fill: #b8392a; stroke: rgba(10, 6, 4, 0.9); }
+  body.night .pin.sel .pd { fill: #d4513a; }
+  body.night .pin .ps { fill: rgba(0, 0, 0, 0.5); }
+  body.night .pin .pvo { stroke: rgba(22, 20, 16, 0.9); }
+  body.night #tip, body.night .btn[data-tip]::after, body.night #banner, body.night #card, body.night #card::after,
+  body.night #export, body.night #toast {
+    background: rgba(36, 32, 26, 0.97); border-color: rgba(201, 168, 106, 0.45); color: var(--text);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  }
+  body.night #banner { border-color: rgba(181, 65, 44, 0.85); }
+  body.night #stats { color: rgba(236, 220, 184, 0.85); -webkit-text-stroke-color: rgba(22, 20, 16, 0.9); }
+  body.night #stats .warn, body.night #export p.x-warn { color: #f09a76; }
+  body.night #dock, body.night #ledger { background: rgba(34, 30, 24, 0.94); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
+  body.night #ledger .st b, body.night #ledger .conts i.on { color: #f09a76; }
+  body.night #ledger .st b small, body.night #ledger .st span { color: rgba(236, 220, 184, 0.72); }
+  body.night #ledger .rule, body.night .sep { background: rgba(201, 168, 106, 0.3); }
+  body.night #ledger .conts i { color: rgba(236, 220, 184, 0.3); }
+  body.night .btn:hover { background: rgba(236, 220, 184, 0.1); }
+  body.night .btn:active { background: rgba(236, 220, 184, 0.18); }
+  body.night .pill { border-color: rgba(201, 168, 106, 0.45); background: rgba(236, 220, 184, 0.06); color: var(--text); }
+  body.night .pill:hover { background: rgba(236, 220, 184, 0.14); }
+  body.night .pill.danger { color: #f09a76; border-color: rgba(240, 154, 118, 0.5); }
+  body.night #xText { background: rgba(18, 16, 12, 0.6); color: var(--text); border-color: rgba(201, 168, 106, 0.4); }
 
   /* ---------- Map ---------- */
   /* The HUD is display only: clicks and hover pass through it to the map underneath. */
@@ -591,7 +631,39 @@ window.MY_PINS = [
   {"id":"pmw0nen6a0n","lon":139.7236,"lat":35.7036,"name":"Tokyo, Japan","country":"Japan","iso":"JPN","added":"2026-11-03"},
   {"id":"pmw0nepxol1","lon":136.8838,"lat":35.1696,"name":"Nagoya, Japan","country":"Japan","iso":"JPN","added":"2026-11-03"},
   {"id":"pmw0nf14qt8","lon":135.5079,"lat":34.6975,"name":"Osaka, Japan","country":"Japan","iso":"JPN","added":"2026-11-03"},
-  {"id":"pmw0nf2oqn2","lon":135.7474,"lat":35.0559,"name":"Kyoto, Japan","country":"Japan","iso":"JPN","added":"2026-11-03"}
+  {"id":"pmw0nf2oqn2","lon":135.7474,"lat":35.0559,"name":"Kyoto, Japan","country":"Japan","iso":"JPN","added":"2026-11-03"},
+  {"id":"pmw0nyz6jwy","lon":-16.2598,"lat":28.4784,"name":"Santa Cruz de Tenerife, Spain","country":"Spain","iso":"ESP","added":"2026-11-03"},
+  {"id":"pmw10xt7ese","lon":-0.1635,"lat":51.5198,"name":"London, United Kingdom","country":"United Kingdom","iso":"GBR","added":"2026-11-03"},
+  {"id":"pmw10y4s8fr","lon":-3.28,"lat":55.9443,"name":"Edinburgh, United Kingdom","country":"United Kingdom","iso":"GBR","added":"2026-11-03"},
+  {"id":"pmw10z17qhe","lon":8.8782,"lat":46.709,"name":"Switzerland","country":"Switzerland","iso":"CHE","added":"2026-11-03"},
+  {"id":"pmw10zl1uak","lon":23.7129,"lat":38.0015,"name":"Athens, Greece","country":"Greece","iso":"GRC","added":"2026-11-03"},
+  {"id":"pmw10zpn2h8","lon":22.1275,"lat":37.0347,"name":"Kalamata, Greece","country":"Greece","iso":"GRC","added":"2026-11-03"},
+  {"id":"pmw110j5frs","lon":1.2408,"lat":41.2109,"name":"Tarragona, Spain","country":"Spain","iso":"ESP","added":"2026-11-03"},
+  {"id":"pmw1115dvtz","lon":-96.3953,"lat":34.6609,"name":"United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw111g5n4x","lon":-94.7041,"lat":39.2093,"name":"Kansas City, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw111ifwe5","lon":-94.9437,"lat":39.2311,"name":"United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw111lijql","lon":-96.01,"lat":41.24,"name":"Omaha, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw111nijrg","lon":-93.7035,"lat":41.5914,"name":"Des Moines, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw111q99do","lon":-104.986,"lat":39.741,"name":"Denver, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw111zlymm","lon":-74.4377,"lat":40.9701,"name":"New York, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw1121ff63","lon":-77.5945,"lat":39.1583,"name":"Washington, D.C., United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw1127g3um","lon":-118.5205,"lat":34.2813,"name":"Los Angeles, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw112lbrrb","lon":-93.3519,"lat":45.1713,"name":"Minneapolis, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw112o09nv","lon":-112.1801,"lat":40.8032,"name":"Salt Lake City, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw112pwin6","lon":-112.067,"lat":33.448,"name":"Phoenix, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw112yem2n","lon":-95.3813,"lat":38.6795,"name":"Lawrence, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw1130s0il","lon":-90.5333,"lat":38.6795,"name":"St. Louis, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw1136yuwb","lon":-70.8596,"lat":42.0709,"name":"Boston, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw11450noq","lon":-92.4548,"lat":34.4471,"name":"United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw114x9f0x","lon":-75.18,"lat":39.946,"name":"Philadelphia, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw11506ydb","lon":-77.6741,"lat":43.2001,"name":"Rochester, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw115ku2wm","lon":-115.2056,"lat":36.1758,"name":"Las Vegas, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw115sjhhf","lon":-117.151,"lat":32.719,"name":"San Diego, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw118tnlxz","lon":-86.83,"lat":21.17,"name":"Canc\u00fan, Mexico","country":"Mexico","iso":"MEX","added":"2026-11-03"},
+  {"id":"pmw1195rvlr","lon":-84.0856,"lat":9.9277,"name":"San Jos\u00e9, Costa Rica","country":"Costa Rica","iso":"CRI","added":"2026-11-03"},
+  {"id":"pmw11c0m4ek","lon":-112.6387,"lat":45.6988,"name":"Butte, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw11crhvec","lon":-117.481,"lat":47.6707,"name":"Spokane, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw11dxl6yz","lon":-118.3144,"lat":50.2004,"name":"Canada","country":"Canada","iso":"CAN","added":"2026-11-03"}
 ];
 </script>
 <script>
@@ -600,6 +672,8 @@ const CONFIG = {
   use24Hour: true,         // true for 14:05, false for 2:05 PM
   showSeconds: false,
   weekStartsMonday: true,
+  nightMode: 'auto',       // 'auto' = dark map from sunset to sunrise at nightLat/nightLon; 'on' = always; 'off' = never
+  nightLat: 41.3874, nightLon: 2.1686,   // Barcelona
   showNight: false,        // day/night shading for the current time (off: even lighting everywhere; on: refreshed once a minute)
   showLedger: true,        // travel ledger below the whole-world map: cities, countries and continents visited
   homeLon: 11,             // centre longitude of the world view (11 puts the seam in the Bering Strait)
@@ -628,6 +702,7 @@ const CONFIG = {
   if (q.has('sec')) CONFIG.showSeconds = q.get('sec') === '1';
   if (q.has('mon')) CONFIG.weekStartsMonday = q.get('mon') === '1';
   if (q.has('night')) CONFIG.showNight = q.get('night') === '1';
+  if (q.has('theme')) CONFIG.nightMode = q.get('theme');
   if (q.has('ledger')) CONFIG.showLedger = q.get('ledger') === '1';
   bool('ignoreclicks', 'ignoreClicksAtWorldView'); bool('dblzoom', 'doubleClickZoom'); bool('glow', 'coastGlow');
 })();
@@ -666,6 +741,49 @@ function buildCalendar(d) {
 
 }
 
+// Optical right alignment of the clock, the date and the calendar: the clock's last digit has a right side bearing and
+// the spaced date line ends in a trailing letter space, so their ink stopped a few px short of the calendar's right
+// edge. Each is shifted right by exactly that gap (measured with the computed font, re-measured on every change).
+const alignCtx = document.createElement('canvas').getContext('2d');
+function inkGap(el) {
+  const cs = getComputedStyle(el);
+  let txt = el.textContent || '';
+  if (!txt) return 0;
+  if (cs.textTransform === 'uppercase') txt = txt.toUpperCase();
+  alignCtx.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+  const m = alignCtx.measureText(txt);
+  const ls = parseFloat(cs.letterSpacing) || 0;
+  let gap = (m.width - m.actualBoundingBoxRight) + ls;
+  // The canvas cannot apply font-variant-numeric (the clock uses tabular digits, whose extra width is shared out on
+  // both sides of each digit), so compare the last character's real advance on the page with the canvas one and add
+  // half the difference.
+  const node = el.firstChild;
+  if (node && node.nodeType === 3 && node.length) {
+    const r = document.createRange();
+    r.setStart(node, node.length - 1); r.setEnd(node, node.length);
+    const domAdv = r.getBoundingClientRect().width - ls, last = txt.slice(-1);
+    const canvasAdv = alignCtx.measureText(last).width;
+    if (domAdv > 0 && Math.abs(domAdv - canvasAdv) < canvasAdv) gap += (domAdv - canvasAdv) / 2;
+  }
+  return gap;
+}
+function alignHud() {
+  const hm = $('hm'), date = $('date'), ampm = $('ampm'), time = $('time');
+  if (!hm || !date || !time) return;
+  const last = ampm && ampm.textContent ? ampm : hm;
+  // Layout positions (offset*, unaffected by the transform below), so re-measuring never feeds back into itself.
+  // Chrome sizes the clock box a little wider than its text (negative letter-spacing), so that slack is included.
+  // (once the clock box has a transform it becomes the text's offsetParent, so measure in the right frame)
+  const slack = last.offsetParent === time
+    ? time.offsetWidth - (last.offsetLeft + last.offsetWidth)
+    : (time.offsetLeft + time.offsetWidth) - (last.offsetLeft + last.offsetWidth);
+  const tGap = inkGap(last) + Math.max(0, slack);
+  time.style.transform = 'translateX(' + (Math.round(tGap * 10) / 10) + 'px)';
+  date.style.transform = 'translateX(' + (Math.round(inkGap(date) * 10) / 10) + 'px)';
+}
+addEventListener('resize', () => setTimeout(alignHud, 50));
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(alignHud);
+
 function tick() {
   const d = new Date();
   let h = d.getHours(), ampm = '';
@@ -677,11 +795,13 @@ function tick() {
     $('hm').textContent = t;
     $('ampm').textContent = ampm;
   }
+  alignHud();
   const key = d.toDateString();
   if (key !== lastDay) {   // runs at load and once each midnight
     lastDay = key;
     $('date').textContent = d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
     buildCalendar(d);
+    alignHud();
   }
 }
 
@@ -1404,6 +1524,56 @@ var earcut = (function () {
     }
     if (lines.length) W.admin1 = () => lines;
   })();
+  // US states (Natural Earth 1:50m outlines, simplified to about 100-400 m): a pin in the United States counts toward the
+  // state it lies in; a coastal or small-island pin just outside the simplified outline counts toward the nearest state
+  // within about 40 km. The District of Columbia is not a state, so it is not counted.
+  const US = (() => {
+    const D = window.US_STATES;
+    if (!D || !Array.isArray(D.n) || !Array.isArray(D.r)) return null;
+    const rings = [], Q = D.q || 100;
+    for (const [si, str] of D.r) {
+      const v = String(str).split(',').map(Number), n = v.length >> 1, xs = new Float64Array(n), ys = new Float64Array(n);
+      let x = 0, y = 0, w = 1e9, e = -1e9, so = 1e9, no = -1e9;
+      for (let i = 0; i < n; i++) {
+        x += v[2 * i]; y += v[2 * i + 1]; xs[i] = x / Q; ys[i] = y / Q;
+        if (xs[i] < w) w = xs[i]; if (xs[i] > e) e = xs[i]; if (ys[i] < so) so = ys[i]; if (ys[i] > no) no = ys[i];
+      }
+      rings.push({ si, xs, ys, w, e, s: so, n: no });
+    }
+    const states = D.n.map((name, i) => ({ name, postal: (D.p && D.p[i]) || '' }));
+    // per-state rings as flat lon/lat (the same shape as country rings) for the visited-state tint
+    const byState = states.map(() => []);
+    for (const r of rings) {
+      const c = new Float64Array(r.xs.length * 2);
+      for (let i = 0; i < r.xs.length; i++) { c[2 * i] = r.xs[i]; c[2 * i + 1] = r.ys[i]; }
+      byState[r.si].push({ c, hole: false, w: r.w, e: r.e, s: r.s, n: r.n });
+    }
+    return { rings, states, byState };
+  })();
+  function usStateOf(lon, lat) {
+    if (!US) return -1;
+    const odd = new Map();
+    for (const r of US.rings) {
+      if (lon < r.w || lon > r.e || lat < r.s || lat > r.n) continue;
+      let inside = false;
+      for (let i = 0, j = r.xs.length - 1; i < r.xs.length; j = i++) {
+        const xi = r.xs[i], yi = r.ys[i], xj = r.xs[j], yj = r.ys[j];
+        if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) odd.set(r.si, !odd.get(r.si));
+    }
+    for (const [si, v] of odd) if (v) return si;
+    let best = -1, bd = 0.4 * 0.4;   // nearest outline vertex within ~40 km
+    const k = Math.cos(lat * Math.PI / 180);
+    for (const r of US.rings) {
+      if (lon < r.w - 0.5 || lon > r.e + 0.5 || lat < r.s - 0.5 || lat > r.n + 0.5) continue;
+      for (let i = 0; i < r.xs.length; i++) { const dx = (r.xs[i] - lon) * k, dy = r.ys[i] - lat, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = r.si; } }
+    }
+    return best;
+  }
+  window.__usState = (lon, lat) => { const i = usStateOf(lon, lat); return i >= 0 ? US.states[i].postal : null; };   // for tests
+  const US_STATE_COUNT = US ? US.states.filter((s) => s.postal !== 'DC' && !/Columbia/.test(s.name)).length : 50;
+  const USA_CI = W.byIso3.get('USA');
   // Natural Earth has a few doubled spaces ('Washington,  D.C.', 'St.  Petersburg'): names are tidied once here, so pin
   // names, labels and the Export text are clean.
   const cleanWs = (s) => String(s).replace(/\s+/g, ' ').trim();
@@ -1456,6 +1626,20 @@ var earcut = (function () {
   // Visited countries: a light red-ochre wash; the deeper oxblood ink outline does the real work.
   C.visited = hex('#e6c08e');
   C.visitedHover = hex('#dcb27c');
+  // Night palette ("lamplit" antique map): dark slate sea, umber land, pale-gold ink, a warm oxblood-brown wash for
+  // visited places. Swapped in by the schedule below; the day palette is kept as it was.
+  const PAL = {
+    day: Object.fromEntries(Object.entries(C).map(([k, v]) => [k, v.slice()])),
+    night: {
+      ocean: hex('#25302d'), oceanEdge: hex('#161d1b'), lake: hex('#2b3936'),
+      land: hex('#3d3527'), landHover: hex('#4a4130'),
+      grid: hex('#c9a86a', 0.1),
+      coast: hex('#d8bd84', 0.82), border: hex('#b39a6a', 0.5), admin: hex('#b39a6a', 0.34),
+      glow: hex('#c9a86a', 0.1),
+      hoverLine: hex('#f3e3bb', 0.95), visitedLine: hex('#e08a62', 0.9), night: hex('#000000', 0.3),
+      visited: hex('#5c3a28'), visitedHover: hex('#68432f')
+    }
+  };
 
   /* ---------- DOM ---------- */
   const $id = (id) => document.getElementById(id);
@@ -2336,13 +2520,19 @@ var earcut = (function () {
         setCommon(P.fill, v, g, k);
         gl.uniform4fv(P.fill.u.u_color, C.land);
         gl.drawElements(gl.TRIANGLES, m.landCount, gl.UNSIGNED_INT, 0);
+        const statesOn = !!(m.stStart && m.stStart.length && st.visitedStates && st.visitedStates.size && st.visited.has(USA_CI));
         for (const ci of st.visited) {
+          if (statesOn && ci === USA_CI) continue;   // tinted state by state below
           gl.uniform4fv(P.fill.u.u_color, ci === st.hover ? C.visitedHover : C.visited);
           gl.drawElements(gl.TRIANGLES, m.cCount[ci], gl.UNSIGNED_INT, m.cStart[ci] * 4);
         }
-        if (st.hover >= 0 && !st.visited.has(st.hover)) {
+        if (st.hover >= 0 && (!st.visited.has(st.hover) || (statesOn && st.hover === USA_CI))) {
           gl.uniform4fv(P.fill.u.u_color, C.landHover);
           gl.drawElements(gl.TRIANGLES, m.cCount[st.hover], gl.UNSIGNED_INT, m.cStart[st.hover] * 4);
+        }
+        if (statesOn) {
+          gl.uniform4fv(P.fill.u.u_color, st.hover === USA_CI ? C.visitedHover : C.visited);
+          for (const si of st.visitedStates) if (m.stCount[si]) gl.drawElements(gl.TRIANGLES, m.stCount[si], gl.UNSIGNED_INT, m.stStart[si] * 4);
         }
         if (nLakes > 0) {
           gl.uniform4fv(P.fill.u.u_color, C.lake);
@@ -2445,6 +2635,7 @@ var earcut = (function () {
     let nv = 0;
     for (const rs of R) for (const r of rs) nv += r.c.length >> 1;
     for (const rs of LR) for (const r of rs) nv += r.c.length >> 1;
+    if (US) for (const rs of US.byState) for (const r of rs) nv += r.c.length >> 1;
     yield;
     const pos = new Float32Array(nv * 2);
     let idx = new Uint32Array(Math.max(4096, Math.ceil(nv * 3.1)));
@@ -2492,6 +2683,9 @@ var earcut = (function () {
       lakeMinZ[k] = W.lakes[k].minZoom; lakeCum[k + 1] = ni - landCount;
       if ((k & 63) === 0 && timeUp()) yield;
     }
+    // US states (for the visited-state tint), after the lakes
+    const stStart = [], stCount = [];
+    if (US) for (let si = 0; si < US.byState.length; si++) { stStart[si] = ni; feature(US.byState[si]); stCount[si] = ni - stStart[si]; }
     // line segments: coast | border | lake shores (by minZoom) | admin-1 (sorted by minZoom)
     const arcs = W.countryArcs(L);
     const A1 = W.admin1 ? W.admin1(Math.min(L, W.admin1Levels.length - 1)) : [];
@@ -2521,7 +2715,7 @@ var earcut = (function () {
     return {
       pos: pos.subarray(0, vb * 2), idx: idx.subarray(0, ni), segs,
       meta: {
-        cStart, cCount, landCount,
+        cStart, cCount, landCount, stStart, stCount,
         lakes: prefixCounter(lakeMinZ, lakeCum, landCount),
         coast: [0, nCoast], border: [nCoast, nBorder],
         shores: prefixCounter(lakeMinZ, shoreCum, shoreStart),
@@ -2651,16 +2845,18 @@ var earcut = (function () {
       clipTo(c, G);
       const R = W.countryRings(L);
       const land = new Path2D(), visited = new Path2D(), visitedLine = new Path2D();
+      const statesOn = !!(US && st.visitedStates && st.visitedStates.size && st.visited.has(USA_CI));
       for (const sh of shifts) R.forEach((rs, ci) => {
         const b = W.countries[ci].bbox;
         if (b[2] + sh < G.lonW || b[0] + sh > G.lonE || b[3] < G.latS || b[1] > G.latN) return;
-        const isVisited = st.visited.has(ci);
+        const isVisited = st.visited.has(ci), wash = isVisited && !(statesOn && ci === USA_CI);
         for (const r of rs) {
           if (!vis(r, sh)) continue;
-          poly(G, isVisited ? visited : land, r.c, sh);
+          poly(G, wash ? visited : land, r.c, sh);
           if (isVisited) ringOutline(G, visitedLine, r.c, sh);
         }
       });
+      if (statesOn) for (const sh of shifts) for (const si of st.visitedStates) for (const r of US.byState[si]) if (vis(r, sh)) poly(G, visited, r.c, sh);
       c.fillStyle = css(C.land); c.fill(land, 'evenodd');
       c.fillStyle = css(C.visited); c.fill(visited, 'evenodd');
       const wz = webZoom(v);
@@ -2840,7 +3036,7 @@ var earcut = (function () {
   let hoverCi = -1;
   let visited = new Set(), visitedKey = '';
   function renderMap() {
-    const st = { view, want: wantLevel(view), hover: hoverCi, visited, visitedKey, drawnLevel: -1 };
+    const st = { view, want: wantLevel(view), hover: hoverCi, visited, visitedStates, visitedKey, drawnLevel: -1 };
     let drew = false;
     if (renderer === 'webgl2') {
       applyCanvasSize();
@@ -3040,10 +3236,17 @@ var earcut = (function () {
     pins = Array.from(byId.values()).filter(alive);
     if (storeRecovered) writeStore();          // replace the corrupt value (a copy is in the backup key)
   }
+  // Visited US states (from the state each US pin lies in; D.C. is not a state). When there are any, the United States
+  // is tinted state by state instead of as a whole country.
+  let visitedStates = new Set();
   function refreshVisited() {
-    visited = new Set();
-    for (const p of pins) { const ci = W.byIso3.get(p.iso); if (ci != null) visited.add(ci); }
-    visitedKey = Array.from(visited).sort((a, b) => a - b).join(',');
+    visited = new Set(); visitedStates = new Set();
+    for (const p of pins) {
+      const ci = W.byIso3.get(p.iso);
+      if (ci != null) visited.add(ci);
+      if (US && ci === USA_CI) { const si = usStateOf(p.lon, p.lat); if (si >= 0 && US.states[si].postal !== 'DC') visitedStates.add(si); }
+    }
+    visitedKey = Array.from(visited).sort((a, b) => a - b).join(',') + '|s' + Array.from(visitedStates).sort((a, b) => a - b).join(',');
   }
   // Undo entries another instance has already made moot (its pin was removed or restored there) are dropped.
   function pruneUndo() {
@@ -3747,48 +3950,6 @@ var earcut = (function () {
   // Travel ledger: distinct cities (pins named after a place, not just a country or sea coordinates), countries and
   // continents, from the pins themselves.
   const CONTS = (W.continents || ['Africa', 'Antarctica', 'Asia', 'Europe', 'North America', 'Oceania', 'South America']);
-  // US states (Natural Earth 1:50m outlines, simplified to about 100-400 m): a pin in the United States counts toward the
-  // state it lies in; a coastal or small-island pin just outside the simplified outline counts toward the nearest state
-  // within about 40 km. The District of Columbia is not a state, so it is not counted.
-  const US = (() => {
-    const D = window.US_STATES;
-    if (!D || !Array.isArray(D.n) || !Array.isArray(D.r)) return null;
-    const rings = [], Q = D.q || 100;
-    for (const [si, str] of D.r) {
-      const v = String(str).split(',').map(Number), n = v.length >> 1, xs = new Float64Array(n), ys = new Float64Array(n);
-      let x = 0, y = 0, w = 1e9, e = -1e9, so = 1e9, no = -1e9;
-      for (let i = 0; i < n; i++) {
-        x += v[2 * i]; y += v[2 * i + 1]; xs[i] = x / Q; ys[i] = y / Q;
-        if (xs[i] < w) w = xs[i]; if (xs[i] > e) e = xs[i]; if (ys[i] < so) so = ys[i]; if (ys[i] > no) no = ys[i];
-      }
-      rings.push({ si, xs, ys, w, e, s: so, n: no });
-    }
-    const states = D.n.map((name, i) => ({ name, postal: (D.p && D.p[i]) || '' }));
-    return { rings, states };
-  })();
-  function usStateOf(lon, lat) {
-    if (!US) return -1;
-    const odd = new Map();
-    for (const r of US.rings) {
-      if (lon < r.w || lon > r.e || lat < r.s || lat > r.n) continue;
-      let inside = false;
-      for (let i = 0, j = r.xs.length - 1; i < r.xs.length; j = i++) {
-        const xi = r.xs[i], yi = r.ys[i], xj = r.xs[j], yj = r.ys[j];
-        if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
-      }
-      if (inside) odd.set(r.si, !odd.get(r.si));
-    }
-    for (const [si, v] of odd) if (v) return si;
-    let best = -1, bd = 0.4 * 0.4;   // nearest outline vertex within ~40 km
-    const k = Math.cos(lat * Math.PI / 180);
-    for (const r of US.rings) {
-      if (lon < r.w - 0.5 || lon > r.e + 0.5 || lat < r.s - 0.5 || lat > r.n + 0.5) continue;
-      for (let i = 0; i < r.xs.length; i++) { const dx = (r.xs[i] - lon) * k, dy = r.ys[i] - lat, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = r.si; } }
-    }
-    return best;
-  }
-  window.__usState = (lon, lat) => { const i = usStateOf(lon, lat); return i >= 0 ? US.states[i].postal : null; };   // for tests
-  const US_STATE_COUNT = US ? US.states.filter((s) => s.postal !== 'DC' && !/Columbia/.test(s.name)).length : 50;
   // A pin named only after its country counts as a city when it is a city-state (Singapore, Monaco): a place of that
   // name lies within 40 km.
   function cityStateAt(p, name) {
@@ -4324,6 +4485,7 @@ var earcut = (function () {
       GLR.fullNext();
       updateSun();
       selfCheck();
+      applyTheme();
       if (frameWanted || CONFIG.showNight) requestFrame();
     }
   });
@@ -4331,10 +4493,51 @@ var earcut = (function () {
   setInterval(() => {
     if (document.hidden) return;
     selfCheck();
+    applyTheme();
     if (!CONFIG.showNight) return;
     updateSun();
     requestFrame();
   }, 60000);
+
+  /* ---------- night mode: dark palette between sunset and sunrise at a chosen place (default Barcelona) ---------- */
+  // Sunrise/sunset from the standard solar-position formulas (as used by NOAA / SunCalc), for the solar day nearest
+  // the given time; times are absolute (UTC), so the PC's time zone does not matter. Checked once a minute.
+  function sunTimes(ms, lat, lon) {
+    const rad = Math.PI / 180, day = 86400000, J1970 = 2440588, J2000 = 2451545, J0 = 0.0009, e = rad * 23.4397;
+    const d = ms / day - 0.5 + J1970 - J2000, lw = -lon * rad, phi = lat * rad;
+    const n = Math.round(d - J0 - lw / (2 * Math.PI));
+    const transit = (ht) => J0 + (ht + lw) / (2 * Math.PI) + n;
+    const ds = transit(0), M = rad * (357.5291 + 0.98560028 * ds);
+    const Cc = rad * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
+    const L = M + Cc + rad * 102.9372 + Math.PI;
+    const dec = Math.asin(Math.sin(e) * Math.sin(L));
+    const jt = (a) => J2000 + a + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
+    const Jnoon = jt(ds);
+    const cosW = (Math.sin(-0.833 * rad) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec));
+    if (cosW <= -1) return { rise: -Infinity, set: Infinity };          // polar day
+    if (cosW >= 1) return { rise: Infinity, set: -Infinity };           // polar night
+    const Jset = jt(transit(Math.acos(cosW))), Jrise = Jnoon - (Jset - Jnoon);
+    const toMs = (j) => (j + 0.5 - J1970) * day;
+    return { rise: toMs(Jrise), set: toMs(Jset) };
+  }
+  function isNightAt(ms) {
+    const t = sunTimes(ms, CONFIG.nightLat, CONFIG.nightLon);
+    return ms < t.rise || ms >= t.set;
+  }
+  let theme = '';
+  function applyTheme() {
+    const mode = CONFIG.nightMode;
+    const want = mode === 'on' || mode === 'night' ? 'night' : mode === 'off' || mode === 'day' ? 'day' : (isNightAt(Date.now()) ? 'night' : 'day');
+    if (want === theme) return;
+    theme = want;
+    const P = PAL[want];
+    for (const k of Object.keys(P)) C[k] = P[k].slice();
+    document.body.classList.toggle('night', want === 'night');
+    GLR.invalidate(); C2D.invalidate();
+    labelKey = '';
+    requestFrame();
+  }
+  applyTheme();
 
   /* ---------- test/automation hooks ---------- */
   window.__map = {
@@ -4349,6 +4552,9 @@ var earcut = (function () {
       return { hover: hoverCi, hoverName: hoverCi >= 0 ? W.countries[hoverCi].name : '', undo: undoStack.length, size: Object.assign({}, size), layout: Object.assign({}, layout), gpu: renderer === 'webgl2' ? GLR.stats() : null, myPinsBroken, storeRecovered, labels: { cl: pools.cl.filter((e) => e.style.display !== 'none').map((e) => e.textContent), lbl: pools.lbl.filter((e) => e.style.display !== 'none').map((e) => e.textContent), plbl: pools.plbl.filter((e) => e.style.display !== 'none').map((e) => e.textContent) } };
     },
     setView(lon, lat, z) { setView({ cx: xOfLon(lon), cy: mercY(lat), z: z || view.z }); afterSettle(); },
+    theme() { return theme; },
+    sunTimes(ms) { return sunTimes(ms, CONFIG.nightLat, CONFIG.nightLon); },
+    visitedStates() { return Array.from(visitedStates).map((si) => US.states[si].postal).sort(); },
     setColor(name, h, a) { C[name] = hex(h, a); GLR.invalidate(); C2D.invalidate(); requestFrame(); },
     get renderer() { return renderer; },
     timings: {}

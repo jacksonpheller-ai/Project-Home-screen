@@ -33,7 +33,8 @@ The toolbar is in the bottom right:
 - Click a pin to see its name and the date you added it, zoom to it, or remove it.
 - Pins are named automatically from the nearest city, for example "Paris, France". Zoom in before dropping a pin if you want an exact spot.
 - A ledger below the whole-world map counts the cities, countries, continents and US states you have pinned (it hides while you are zoomed in). US states are worked out from Natural Earth state outlines; Washington, D.C. counts as a city but not a state.
-- Countries with a pin get a red-ochre wash.
+- Countries with a pin get a red-ochre wash. In the United States the wash is applied state by state, to the states your pins are in.
+- After sunset in Barcelona the map switches to a dark night palette, and back at sunrise (checked once a minute; no internet needed).
 
 ## Keeping your pins safe
 
@@ -53,6 +54,8 @@ Edit the `CONFIG` block near the top of the main `<script>` in `index.html`:
 | `use24Hour` | true | 24-hour clock |
 | `showSeconds` | false | Show seconds |
 | `weekStartsMonday` | true | Calendar week start |
+| `nightMode` | 'auto' | Dark "lamplit" map from sunset to sunrise at `nightLat`/`nightLon`; 'on' = always dark, 'off' = never |
+| `nightLat`, `nightLon` | 41.3874, 2.1686 | Where sunset/sunrise are calculated (Barcelona) |
 | `showNight` | false | Day/night shading, updated once a minute (off: even lighting) |
 | `showLedger` | true | Travel ledger (cities, countries, continents, US states) below the whole-world map |
 | `ignoreClicksAtWorldView` | true | Ordinary clicks do nothing at the whole-world view |
