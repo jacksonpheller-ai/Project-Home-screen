@@ -562,6 +562,36 @@
    Only lon and lat are required; the rest is filled in automatically. A typing mistake in this block only hides
    these pins: the clock, calendar and map keep working, and the Export panel says the list could not be read. */
 window.MY_PINS = [
+  {"id":"pmw0n829i5e","lon":2.0612,"lat":41.4483,"name":"Barcelona, Spain","country":"Spain","iso":"ESP","added":"2026-11-03"},
+  {"id":"pmw0n83zot3","lon":-0.5882,"lat":39.5409,"name":"Valencia, Spain","country":"Spain","iso":"ESP","added":"2026-11-03"},
+  {"id":"pmw0n86reg4","lon":-3.685,"lat":40.402,"name":"Madrid, Spain","country":"Spain","iso":"ESP","added":"2026-11-03"},
+  {"id":"pmw0n88c891","lon":4.828,"lat":45.772,"name":"Lyon, France","country":"France","iso":"FRA","added":"2026-11-03"},
+  {"id":"pmw0n8a2okp","lon":2.353,"lat":48.858,"name":"Paris, France","country":"France","iso":"FRA","added":"2026-11-03"},
+  {"id":"pmw0n8gwyt9","lon":9.203,"lat":45.472,"name":"Milan, Italy","country":"Italy","iso":"ITA","added":"2026-11-03"},
+  {"id":"pmw0n8zbaov","lon":9.6564,"lat":45.7013,"name":"Bergamo, Italy","country":"Italy","iso":"ITA","added":"2026-11-03"},
+  {"id":"pmw0n97unst","lon":9.0746,"lat":45.8085,"name":"Como, Italy","country":"Italy","iso":"ITA","added":"2026-11-03"},
+  {"id":"pmw0n9zea16","lon":-96.795,"lat":32.772,"name":"Dallas, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0na0gvy3","lon":-95.4339,"lat":29.7315,"name":"Houston, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0na1ezit","lon":-98.5343,"lat":29.5355,"name":"San Antonio, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0na6zgg2","lon":-97.6042,"lat":30.2928,"name":"Austin, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0nabc9u5","lon":-97.6042,"lat":26.2731,"name":"Harlingen, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0nahn3ts","lon":-101.9288,"lat":33.597,"name":"Lubbock, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0naixppk","lon":-101.9006,"lat":35.2477,"name":"Amarillo, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0nak9age","lon":-102.367,"lat":31.846,"name":"Odessa, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0napvc1u","lon":-93.77,"lat":32.5,"name":"Shreveport, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0nb0wp98","lon":-99.7905,"lat":32.466,"name":"Abilene, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0nb244dm","lon":-97.34,"lat":32.74,"name":"Ft. Worth, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0nb3ff4i","lon":-106.6819,"lat":35.1356,"name":"Albuquerque, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0nb7c9xu","lon":-98.5503,"lat":33.9165,"name":"Wichita Falls, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0nbp3066","lon":-87.2676,"lat":30.4332,"name":"Pensacola, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0nbut6y7","lon":-86.873,"lat":33.5286,"name":"Birmingham, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0nbzqwqs","lon":-87.5555,"lat":33.2366,"name":"Tuscaloosa, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw0ne6mppz","lon":103.854,"lat":1.295,"name":"Singapore","country":"Singapore","iso":"SGP","added":"2026-11-03"},
+  {"id":"pmw0ne83cxu","lon":101.5819,"lat":3.2472,"name":"Kuala Lumpur, Malaysia","country":"Malaysia","iso":"MYS","added":"2026-11-03"},
+  {"id":"pmw0nen6a0n","lon":139.7236,"lat":35.7036,"name":"Tokyo, Japan","country":"Japan","iso":"JPN","added":"2026-11-03"},
+  {"id":"pmw0nepxol1","lon":136.8838,"lat":35.1696,"name":"Nagoya, Japan","country":"Japan","iso":"JPN","added":"2026-11-03"},
+  {"id":"pmw0nf14qt8","lon":135.5079,"lat":34.6975,"name":"Osaka, Japan","country":"Japan","iso":"JPN","added":"2026-11-03"},
+  {"id":"pmw0nf2oqn2","lon":135.7474,"lat":35.0559,"name":"Kyoto, Japan","country":"Japan","iso":"JPN","added":"2026-11-03"}
 ];
 </script>
 <script>
@@ -570,7 +600,7 @@ const CONFIG = {
   use24Hour: true,         // true for 14:05, false for 2:05 PM
   showSeconds: false,
   weekStartsMonday: true,
-  showNight: true,         // soft day/night shading for the current time (refreshed once a minute)
+  showNight: false,        // day/night shading for the current time (off: even lighting everywhere; on: refreshed once a minute)
   showLedger: true,        // travel ledger below the whole-world map: cities, countries and continents visited
   homeLon: 11,             // centre longitude of the world view (11 puts the seam in the Bering Strait)
   homeTopLat: 80,          // latitude band the world view tries to show (polar latitudes are cropped to fit)
@@ -3759,6 +3789,13 @@ var earcut = (function () {
   }
   window.__usState = (lon, lat) => { const i = usStateOf(lon, lat); return i >= 0 ? US.states[i].postal : null; };   // for tests
   const US_STATE_COUNT = US ? US.states.filter((s) => s.postal !== 'DC' && !/Columbia/.test(s.name)).length : 50;
+  // A pin named only after its country counts as a city when it is a city-state (Singapore, Monaco): a place of that
+  // name lies within 40 km.
+  function cityStateAt(p, name) {
+    if (!W.nearestPlace || !W.places) return false;
+    const hit = W.nearestPlace(p.lon, p.lat, { radiusKm: 40 });
+    return !!hit && String(W.places.name[hit.i]).toLowerCase() === String(name).toLowerCase();
+  }
   function updateLedger() {
     if (!CONFIG.showLedger) { ledgerEl.classList.add('nofit'); return; }
     const cities = new Set(), countries = new Set(), conts = new Set(), states = new Set();
@@ -3767,7 +3804,7 @@ var earcut = (function () {
       if (c) { countries.add(ci); if (c.continent) conts.add(c.continent); }
       if (p.iso === 'USA') { const si = usStateOf(p.lon, p.lat); if (si >= 0 && US.states[si].postal !== 'DC') states.add(si); }
       const sn = shortName(p);
-      if (p.name && p.name !== p.country && sn !== p.country && !/\u00b0/.test(sn)) cities.add(sn.toLowerCase() + '|' + (p.iso || ''));
+      if (p.name && !/\u00b0/.test(sn) && (sn !== p.country || cityStateAt(p, sn))) cities.add(sn.toLowerCase() + '|' + (p.iso || ''));
     }
     const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
     const st = (num, label) => '<div class="st"><b>' + num + '</b><span>' + label + '</span></div>';
@@ -3806,7 +3843,8 @@ var earcut = (function () {
   function updateStats() {
     updateLedger();
     const n = pins.length, c = visited.size;
-    let html = n ? '<b>' + n + '</b> ' + (n === 1 ? 'place' : 'places') + ' \u00b7 <b>' + c + '</b> ' + (c === 1 ? 'country' : 'countries') : 'No places pinned yet';
+    // The counter is gone (the travel ledger shows the counts); this line only appears to warn that pins cannot be saved.
+    let html = '';
     if (!storageOK) html += '<span class="warn">Not saved - use Export</span>';
     if (statsEl._html !== html) { statsEl.innerHTML = html; statsEl._html = html; readStatsRect(); }
   }
