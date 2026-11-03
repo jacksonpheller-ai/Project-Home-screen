@@ -6,21 +6,21 @@
 <title>World Map Wallpaper</title>
 <style>
   :root {
-    --text: #e9ecf8;
-    --muted: rgba(233, 236, 248, 0.6);
-    --faint: rgba(233, 236, 248, 0.26);
-    --accent: #ffb46a;
-    --panel: rgba(6, 8, 18, 0.45);
-    --line: rgba(255, 255, 255, 0.08);
+    --text: #2e1f10;
+    --muted: rgba(58, 38, 18, 0.78);
+    --faint: rgba(58, 38, 18, 0.5);
+    --accent: #8e2a1e;
+    --panel: rgba(243, 233, 208, 0.92);
+    --line: rgba(107, 74, 42, 0.55);
   }
   html, body {
     margin: 0;
     height: 100%;
     overflow: hidden;
-    background: #02030a;
+    background: #b4bfae;
   }
   body {
-    font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
     color: var(--text);
     user-select: none;
     cursor: default;
@@ -35,11 +35,11 @@
     flex-direction: column;
     align-items: flex-end;
     gap: clamp(16px, 2.2vh, 28px);
-    text-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+    text-shadow: 0 0 10px rgba(243, 233, 208, 0.95), 0 0 3px rgba(243, 233, 208, 0.95);
   }
   #time {
     font-size: clamp(56px, 6.2vw, 124px);
-    font-weight: 200;
+    font-weight: 400;
     letter-spacing: -0.02em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
@@ -102,9 +102,9 @@
   .day.past { color: var(--faint); }
   .day.today {
     background: var(--accent);
-    color: #1c0e02;
+    color: #f6ecd4;
     font-weight: 700;
-    box-shadow: 0 0 18px rgba(255, 170, 90, 0.55);
+    box-shadow: none;
   }
 
 
@@ -116,7 +116,7 @@
     left: 0; top: 0;
     width: 100%; height: 100%;
     display: block;
-    background: #060a13;
+    background: #b4bfae;
     touch-action: none;
   }
   #map2d { display: none; }
@@ -128,14 +128,14 @@
   #labels > div {
     position: absolute; left: 0; top: 0;
     white-space: nowrap;
-    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-    -webkit-text-stroke: 3px rgba(4, 8, 17, 0.88);
+    font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+    -webkit-text-stroke: 3px rgba(240, 228, 198, 0.85);
     paint-order: stroke fill;
     stroke-linejoin: round;
   }
   .cl {             /* country: spaced capitals, centred on the label point */
     font-weight: 600;
-    color: rgba(196, 208, 236, 0.46);
+    color: rgba(74, 48, 24, 0.62);
     line-height: 1;
   }
   .lbl {            /* city: dot (ring for capitals) plus name */
@@ -143,19 +143,19 @@
     display: flex; align-items: center; gap: 5px;
     font-size: 12.5px; line-height: 18px;
     letter-spacing: 0.01em;
-    color: rgba(214, 222, 240, 0.75);
+    color: rgba(46, 30, 14, 0.9);
   }
-  .lbl.cap { font-weight: 600; color: rgba(232, 238, 250, 0.84); }
+  .lbl.cap { font-weight: 600; color: rgba(36, 22, 8, 0.96); }
   .lbl.l { flex-direction: row-reverse; }
   .lbl.a, .lbl.b { flex-direction: column-reverse; height: auto; margin-top: 0; gap: 1px; line-height: 16px; }   /* name above / below the dot */
   .lbl.b { flex-direction: column; }
-  .lbl i { width: 4px; height: 4px; margin: 0 -0.5px; border-radius: 50%; background: rgba(214, 222, 240, 0.78); flex: none; box-shadow: 0 0 0 1px rgba(4, 8, 17, 0.6); }
-  .lbl.cap i { width: 4.4px; height: 4.4px; margin: 0 -1px; background: transparent; border: 1.2px solid rgba(240, 244, 252, 0.92); box-shadow: 0 0 0 1px rgba(4, 8, 17, 0.7); }
+  .lbl i { width: 4px; height: 4px; margin: 0 -0.5px; border-radius: 50%; background: rgba(46, 30, 14, 0.9); flex: none; box-shadow: 0 0 0 1px rgba(240, 228, 198, 0.7); }
+  .lbl.cap i { width: 4.4px; height: 4.4px; margin: 0 -1px; background: transparent; border: 1.2px solid rgba(46, 30, 14, 0.95); box-shadow: 0 0 0 1px rgba(240, 228, 198, 0.8); }
   .plbl {           /* pin name: amber, above city labels */
     height: 18px; margin-top: -9px;
     font-size: 12.5px; font-weight: 600; line-height: 18px;
     letter-spacing: 0.01em;
-    color: #ffe1c2;
+    color: #7a1f14;
     -webkit-text-stroke-width: 3.5px !important;
   }
 
@@ -163,16 +163,16 @@
   #pins { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
   .pin { position: absolute; left: 0; top: 0; width: 0; height: 0; }
   .pin svg { position: absolute; left: -12px; top: -30px; width: 24px; height: 33px; overflow: visible; pointer-events: none; }
-  .pin .pg { fill: rgba(255, 180, 106, 0); }
-  .pin:hover .pg, .pin.sel .pg { fill: rgba(255, 180, 106, 0.24); }
-  .pin .ps { fill: rgba(0, 0, 0, 0.42); }
-  .pin .pd { fill: #ffb46a; stroke: rgba(40, 20, 4, 0.85); stroke-width: 1.25px; }
-  .pin.sel .pd { fill: #ffd2a6; }
-  .pin .pc { fill: #2b1606; }
+  .pin .pg { fill: rgba(142, 42, 30, 0); }
+  .pin:hover .pg, .pin.sel .pg { fill: rgba(142, 42, 30, 0.2); }
+  .pin .ps { fill: rgba(42, 26, 10, 0.4); }
+  .pin .pd { fill: #9a2c1e; stroke: rgba(42, 20, 8, 0.9); stroke-width: 1.25px; }
+  .pin.sel .pd { fill: #c0402a; }
+  .pin .pc { fill: #f3e6c8; }
   .pin .pv, .pin .pvo { display: none; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .pin.below .pv, .pin.below .pvo { display: inline; }   /* the place is further south than the drawn map: a small arrow */
-  .pin .pvo { stroke: rgba(4, 8, 17, 0.85); stroke-width: 3.6px; }
-  .pin .pv { stroke: #ffb46a; stroke-width: 1.6px; }
+  .pin .pvo { stroke: rgba(243, 233, 208, 0.9); stroke-width: 3.6px; }
+  .pin .pv { stroke: #8e2a1e; stroke-width: 1.6px; }
   .pin .ph {           /* head: about 9 px around the head centre (the visible head in pin mode, so nearby places stay droppable) */
     position: absolute; left: -9px; top: -26px; width: 18px; height: 18px; border-radius: 50%;
     pointer-events: auto; cursor: pointer;
@@ -185,7 +185,7 @@
   }
   .pin.new svg { animation: drop 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.25) both; transform-origin: 12px 30px; }
   .pin.new .rp { animation: ripple 0.7s ease-out both; }
-  .pin .rp { fill: none; stroke: #ffb46a; stroke-width: 1.5px; opacity: 0; }
+  .pin .rp { fill: none; stroke: #8e2a1e; stroke-width: 1.5px; opacity: 0; }
   @keyframes drop { from { transform: translateY(-16px) scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
   @keyframes ripple { from { opacity: 0.8; transform: scale(0.2); } to { opacity: 0; transform: scale(1); } }
   .pin .rp { transform-box: fill-box; transform-origin: center; }
@@ -193,10 +193,10 @@
   #tip {
     position: fixed; left: 0; top: 0; z-index: 6;
     padding: 6px 10px 7px;
-    background: rgba(8, 11, 21, 0.88);
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(246, 238, 216, 0.97);
+    border: 1px solid rgba(107, 74, 42, 0.6);
     border-radius: 9px;
-    font: 13px/1.25 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    font: 13px/1.25 "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
     letter-spacing: 0.01em;
     white-space: nowrap;
     pointer-events: none;
@@ -213,7 +213,7 @@
     right: clamp(24px, 3vw, 64px);
     bottom: 72px;
     z-index: 5;
-    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
   }
   #stats {             /* sits above the dock; never wider than it, so the layout does not depend on its text */
     position: absolute; right: 0; bottom: calc(100% + 8px);
@@ -221,9 +221,9 @@
     padding-right: 6px; box-sizing: border-box;
     text-align: right;
     font-size: 12.5px; line-height: 1.45;
-    color: rgba(233, 236, 248, 0.72);
+    color: rgba(46, 30, 14, 0.85);
     letter-spacing: 0.06em;
-    -webkit-text-stroke: 3px rgba(4, 8, 17, 0.85);
+    -webkit-text-stroke: 3px rgba(240, 228, 198, 0.9);
     paint-order: stroke fill;
   }
   #stats b { color: var(--text); font-weight: 600; }
@@ -231,20 +231,20 @@
   /* while a button's hover label is up (it sits where the stats line is), the stats line steps aside */
   body:not(.idle):not(.pinmode) #ui:has(.btn[data-tip]:hover) #stats,
   body.pinmode:not(.idle) #ui:has(.btn[data-tip]:not(#bPin):hover) #stats { opacity: 0; transition-delay: 0.2s; }
-  #stats .warn { display: block; color: #ffc89a; letter-spacing: 0.03em; }
+  #stats .warn { display: block; color: #8e2a1e; letter-spacing: 0.03em; }
   #dock {
     display: flex;
     align-items: center;
     gap: 4px;
     padding: 5px;
-    background: rgba(6, 8, 18, 0.62);
+    background: rgba(243, 233, 208, 0.94);
     border: 1px solid var(--line);
     border-radius: 16px;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 4px 14px rgba(60, 40, 15, 0.25);
     transition: opacity 0.3s;
   }
   body.dim #dock { opacity: 0.5; }
-  .sep { width: 1px; height: 22px; background: rgba(255, 255, 255, 0.10); margin: 0 3px; }
+  .sep { width: 1px; height: 22px; background: rgba(107, 74, 42, 0.35); margin: 0 3px; }
   .btn {
     position: relative;
     width: 42px; height: 42px;
@@ -253,24 +253,24 @@
     border: 0; border-radius: 11px;
     background: transparent;
     color: var(--text);
-    font: 600 13.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    font: 600 13.5px "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
     letter-spacing: 0.02em;
     cursor: pointer;
     transition: background 0.15s, color 0.15s, box-shadow 0.15s;
   }
   .btn svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-  .btn:hover { background: rgba(255, 255, 255, 0.09); }
-  .btn:active { background: rgba(255, 255, 255, 0.15); }
+  .btn:hover { background: rgba(107, 74, 42, 0.12); }
+  .btn:active { background: rgba(107, 74, 42, 0.2); }
   .btn:disabled { cursor: default; background: transparent; }
   .btn:disabled svg { opacity: 0.32; }
   .btn:focus { outline: none; }
-  .btn:focus-visible { box-shadow: 0 0 0 2px rgba(255, 180, 106, 0.6); }
+  .btn:focus-visible { box-shadow: 0 0 0 2px rgba(142, 42, 30, 0.6); }
   #bPin { width: 80px; display: flex; justify-content: center; gap: 6px; padding: 0 10px 0 8px; }
   #bPin svg { width: 19px; height: 19px; flex: none; }
   #bPin[aria-pressed="true"] {
     background: var(--accent);
-    color: #1c0e02;
-    box-shadow: 0 0 18px rgba(255, 170, 90, 0.45);
+    color: #f6ecd4;
+    box-shadow: none;
   }
   /* Hover labels for the buttons (custom, so they show reliably inside the wallpaper host) */
   .btn[data-tip]::after {
@@ -278,11 +278,11 @@
     position: absolute; left: 50%; bottom: calc(100% + 12px);
     transform: translate(-50%, 4px);
     padding: 5px 9px 6px;
-    background: rgba(8, 11, 21, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(246, 238, 216, 0.97);
+    border: 1px solid rgba(107, 74, 42, 0.6);
     border-radius: 8px;
     color: var(--text);
-    font: 400 12.5px/1.2 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    font: 400 12.5px/1.2 "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
     letter-spacing: 0.01em;
     white-space: nowrap;
     pointer-events: none;
@@ -299,17 +299,17 @@
   body.idle .btn[data-tip]::after { opacity: 0 !important; }
   body.idle .btn:hover, body.idle .pill:hover { background: transparent; }
   body.idle .pill.accent:hover { background: var(--accent); }
-  body.idle .pill.danger:hover { background: rgba(255, 110, 90, 0.08); }
+  body.idle .pill.danger:hover { background: rgba(142, 42, 30, 0.06); }
   /* "Lost at sea" (zoomed in, nothing on screen): the globe button's label stays up as a hint */
-  .btn.hint[data-tip]::after, .btn.hint[data-tip]:hover::after { opacity: 0.92; left: auto; right: -6px; transform: none; border-color: rgba(255, 180, 106, 0.35); }
+  .btn.hint[data-tip]::after, .btn.hint[data-tip]:hover::after { opacity: 0.92; left: auto; right: -6px; transform: none; border-color: rgba(142, 42, 30, 0.5); }
   body:not(.idle) #ui:has(.btn.hint) #stats { opacity: 0; }
-  body.idle .pin .pg { fill: rgba(255, 180, 106, 0) !important; }
-  body.idle .pin.sel .pg { fill: rgba(255, 180, 106, 0.24) !important; }
+  body.idle .pin .pg { fill: rgba(142, 42, 30, 0) !important; }
+  body.idle .pin.sel .pg { fill: rgba(142, 42, 30, 0.2) !important; }
 
   /* Pin mode: amber frame around the screen plus a banner, so the state is obvious */
   #frame {
     position: fixed; inset: 0; z-index: 3; pointer-events: none;
-    box-shadow: inset 0 0 0 2px rgba(255, 180, 106, 0.55), inset 0 0 90px rgba(255, 170, 90, 0.10);
+    box-shadow: inset 0 0 0 3px rgba(142, 42, 30, 0.75), inset 0 0 90px rgba(142, 42, 30, 0.12);
     opacity: 0; transition: opacity 0.25s;
   }
   body.pinmode #frame { opacity: 1; }
@@ -318,48 +318,48 @@
     white-space: nowrap; max-width: var(--maxw, none); box-sizing: border-box;
     display: flex; align-items: center; gap: 12px;
     padding: 5px 5px 5px 16px;
-    background: rgba(8, 11, 21, 0.84);
-    border: 1px solid rgba(255, 180, 106, 0.45);
+    background: rgba(246, 238, 216, 0.97);
+    border: 1.5px solid rgba(142, 42, 30, 0.8);
     border-radius: 999px;
-    font: 14px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+    font: 14px "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+    box-shadow: 0 4px 14px rgba(60, 40, 15, 0.3);
     transform: translate(-50%, -12px);
     opacity: 0; visibility: hidden;
     transition: opacity 0.2s, transform 0.2s, visibility 0s 0.2s;
   }
   body.pinmode #banner { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition: opacity 0.2s, transform 0.2s; }
   #banner.wrap { white-space: normal; }
-  #banner .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(255, 170, 90, 0.8); }
+  #banner .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: none; }
 
   .pill {
     height: 36px; min-width: 64px;
     padding: 0 14px;
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(107, 74, 42, 0.5);
+    background: rgba(107, 74, 42, 0.06);
     color: var(--text);
-    font: 600 13px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    font: 600 13px "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
     letter-spacing: 0.02em;
     white-space: nowrap;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
   }
-  .pill:hover { background: rgba(255, 255, 255, 0.12); }
+  .pill:hover { background: rgba(107, 74, 42, 0.14); }
   .pill:focus { outline: none; }
-  .pill.accent { background: var(--accent); border-color: var(--accent); color: #1c0e02; }
-  .pill.accent:hover { background: #ffc58a; }
-  .pill.danger { border-color: rgba(255, 128, 108, 0.45); color: #ffb3a3; background: rgba(255, 110, 90, 0.08); }
-  .pill.danger:hover { background: rgba(255, 110, 90, 0.18); }
+  .pill.accent { background: var(--accent); border-color: var(--accent); color: #f6ecd4; }
+  .pill.accent:hover { background: #a63624; }
+  .pill.danger { border-color: rgba(142, 42, 30, 0.55); color: #7a1f14; background: rgba(142, 42, 30, 0.06); }
+  .pill.danger:hover { background: rgba(142, 42, 30, 0.14); }
 
   #card {
     position: fixed; left: 0; top: 0; z-index: 7;
     width: 292px; box-sizing: border-box;
     padding: 14px 14px 12px 16px;
-    background: rgba(9, 12, 23, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.11);
+    background: rgba(246, 238, 216, 0.97);
+    border: 1px solid rgba(107, 74, 42, 0.6);
     border-radius: 14px;
-    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
-    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    box-shadow: 0 6px 18px rgba(60, 40, 15, 0.3);
+    font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
   }
   #card[hidden], #export[hidden] { display: none; }
   #card .c-name { font-size: 16px; font-weight: 600; line-height: 1.25; padding-right: 4px; overflow-wrap: anywhere; }
@@ -368,8 +368,8 @@
   #card .c-row .pill { flex: 1; min-width: 0; padding: 0 8px; }
   #card::after {     /* pointer towards the pin: side depends on where the card was placed */
     content: ''; position: absolute; width: 10px; height: 10px;
-    background: rgba(9, 12, 23, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.11);
+    background: rgba(246, 238, 216, 0.97);
+    border: 1px solid rgba(107, 74, 42, 0.6);
     transform: rotate(45deg);
   }
   #card.pa::after { left: var(--ax, 50%); bottom: -6px; margin-left: -6px; border-width: 0 1px 1px 0; }
@@ -388,33 +388,33 @@
   #export > #xText { flex: 0 1 auto; min-height: 44px; }
   #export {
     padding: 18px 18px 14px;
-    background: rgba(9, 12, 23, 0.96);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(246, 238, 216, 0.97);
+    border: 1px solid rgba(107, 74, 42, 0.6);
     border-radius: 16px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    box-shadow: 0 8px 26px rgba(60, 40, 15, 0.35);
+    font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
     user-select: text;
   }
   #export .x-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 16px; }
   #export .x-head span { color: var(--muted); font-size: 12.5px; letter-spacing: 0.05em; }
   #export p { margin: 8px 0 10px; font-size: 13px; line-height: 1.5; color: var(--muted); }
-  #export p.x-warn { color: #ffc89a; margin-top: -2px; }
+  #export p.x-warn { color: #8e2a1e; margin-top: -2px; }
   #export p.x-warn[hidden] { display: none; }
   #export code { color: var(--text); font-family: Consolas, "Cascadia Mono", ui-monospace, monospace; font-size: 12.5px; }
   #xText {
     width: 100%; height: min(240px, 36vh); box-sizing: border-box;
     padding: 10px 12px;
     resize: none;
-    background: rgba(0, 0, 0, 0.35);
-    color: #d9e2f5;
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 250, 236, 0.7);
+    color: #2e1f10;
+    border: 1px solid rgba(107, 74, 42, 0.45);
     border-radius: 10px;
     font: 12px/1.5 Consolas, "Cascadia Mono", ui-monospace, monospace;
     white-space: pre;
     overflow: auto;
     user-select: text;
   }
-  #xText:focus { outline: none; border-color: rgba(255, 180, 106, 0.5); }
+  #xText:focus { outline: none; border-color: rgba(142, 42, 30, 0.6); }
   #export .x-row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
   #xMsg { flex: 1; font-size: 12.5px; color: var(--accent); }
   #export .x-foot { margin-top: 10px; font-size: 11px; color: var(--faint); letter-spacing: 0.04em; }
@@ -423,10 +423,10 @@
     position: fixed; left: var(--cx, 50%); top: var(--top, 22px); z-index: 6;
     max-width: var(--maxw, 60vw); box-sizing: border-box;
     padding: 9px 16px;
-    background: rgba(8, 11, 21, 0.88);
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(246, 238, 216, 0.97);
+    border: 1px solid rgba(107, 74, 42, 0.6);
     border-radius: 999px;
-    font: 13.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    font: 13.5px "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     pointer-events: none;
     transform: translate(-50%, -10px);
@@ -1348,18 +1348,18 @@ var earcut = (function () {
   /* ---------- colours (sRGB 0..1) ---------- */
   const hex = (h, a) => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255, a == null ? 1 : a];
   const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, 1];
+  // Rustic palette: aged parchment land, muted grey-green sea, sepia ink lines, umber night shade.
   const C = {
-    ocean: hex('#0a1222'), oceanEdge: hex('#04070e'), lake: hex('#09101e'),
-    land: hex('#152034'), landHover: hex('#1f2e48'),
-    grid: hex('#7d9ad0', 0.075),
-    coast: hex('#78a4e6', 0.62), border: hex('#bcd0f0', 0.34), admin: hex('#a9bde4', 0.13),
-    glow: hex('#5a8cf5', 0.10),
-    hoverLine: hex('#e8f0ff', 0.9), visitedLine: hex('#ffb46a', 0.8), night: hex('#010309', 0.36)
+    ocean: hex('#b4bfae'), oceanEdge: hex('#8e9483'), lake: hex('#aab7a8'),
+    land: hex('#ecdcb4'), landHover: hex('#e3cc98'),
+    grid: hex('#6b4a2a', 0.16),
+    coast: hex('#3d2814', 0.88), border: hex('#6b4a2a', 0.55), admin: hex('#7a5a3a', 0.22),
+    glow: hex('#5f7468', 0.22),
+    hoverLine: hex('#2a1a0c', 0.95), visitedLine: hex('#7a2418', 0.9), night: hex('#2a1a0a', 0.26)
   };
-  // Visited countries: a dark, slightly warm (amber-leaning) fill instead of the navy land, quiet enough that a screen
-  // filled by a visited country keeps the palette; the 1 device-px amber outline does the real work.
-  C.visited = hex('#322b2e');
-  C.visitedHover = hex('#3e3539');
+  // Visited countries: a light red-ochre wash; the deeper oxblood ink outline does the real work.
+  C.visited = hex('#e6c08e');
+  C.visitedHover = hex('#dcb27c');
 
   /* ---------- DOM ---------- */
   const $id = (id) => document.getElementById(id);
@@ -1922,6 +1922,11 @@ var earcut = (function () {
         float sinAlt = sin(lat) * u_sun.x + cos(lat) * u_sun.y * cos(lon - u_sun.z);
         float na = u_night.a * smoothstep(0.03, -0.21, sinAlt);
         vec4 c = vec4(u_night.rgb * na, na);
+        // aged paper: a static fine grain plus a gentle darkening toward the screen edges (umber, under the lines)
+        vec2 q = (fragPx() / u_vp - 0.5) * vec2(u_vp.x / u_vp.y, 1.0);
+        float grain = fract(52.9829189 * fract(dot(floor(gl_FragCoord.xy), vec2(0.06711056, 0.00583715)) + 0.37 * fract(gl_FragCoord.y * 0.1031)));
+        float age = 0.035 * grain + 0.16 * smoothstep(0.35, 1.05, length(q));
+        c = over(c, vec4(0.29, 0.19, 0.08, 1.0), age);
         c = over(c, u_cGlow, cov.a);
         c = over(c, u_cAdmin, cov.b);
         c = over(c, u_cBorder, cov.g);
@@ -2556,6 +2561,10 @@ var earcut = (function () {
         c.fillStyle = css(C.lake); c.fill(lp, 'nonzero');   // lakes overlap (Georgian Bay, North Channel and Huron): even-odd would cancel them
         c.strokeStyle = css(C.coast); c.stroke(lp);
       }
+      c.restore(); c.save();   // aged paper: gentle umber darkening toward the screen edges (under the lines)
+      { const vg = c.createRadialGradient(Wd / 2, Hd / 2, Math.hypot(Wd, Hd) * 0.18, Wd / 2, Hd / 2, Math.hypot(Wd, Hd) * 0.6);
+        vg.addColorStop(0, 'rgba(74,48,20,0)'); vg.addColorStop(1, 'rgba(74,48,20,0.16)'); c.fillStyle = vg; c.fillRect(0, 0, Wd, Hd); }
+      clipTo(c, G);
       if (W.admin1) {
         const ap = new Path2D();
         for (const sh of shifts) for (const o of W.admin1(Math.min(L, W.admin1Levels.length - 1))) if (o.minZoom <= wz + 1.5 && vis(o, sh)) line(G, ap, o.c, sh);
@@ -2582,7 +2591,7 @@ var earcut = (function () {
       }
       c.save();
       clipTo(c, G);
-      c.fillStyle = 'rgba(121,172,252,0.1)'; c.fill(fill, 'evenodd');
+      c.fillStyle = 'rgba(150,100,40,0.12)'; c.fill(fill, 'evenodd');
       c.lineJoin = 'round';
       c.strokeStyle = css(C.hoverLine); c.lineWidth = Math.max(1, G.g.dpr); c.stroke(out);
       c.restore();
@@ -3173,7 +3182,7 @@ var earcut = (function () {
   const labelsEl = $id('labels');
   const pools = { cl: [], lbl: [], plbl: [] };
   let labelKey = '', labelsHidden = false, mainSize = null, insular = null, tall = null;
-  const LFONT = '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif';
+  const LFONT = '"Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif';
   const CAPITAL = W.places ? W.places.classes.indexOf('Admin-0 capital') : -1;
   const mctx = document.createElement('canvas').getContext('2d');
   const twCache = new Map();

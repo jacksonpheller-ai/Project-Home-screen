@@ -1,6 +1,6 @@
 # World Map Wallpaper
 
-An interactive world map desktop wallpaper for Windows. You can zoom in and out and drop pins on places you have been. A 24-hour clock and a monthly calendar sit in the top right.
+An interactive world map desktop wallpaper for Windows, styled as an antique parchment map. You can zoom in and out and drop pins on places you have been. A 24-hour clock and a monthly calendar sit in the top right.
 
 It is one self-contained file, `index.html` (about 3 MB). The map data is built in, so it works offline and makes no internet requests. Map data: Made with Natural Earth (public domain).
 
@@ -32,7 +32,7 @@ The toolbar is in the bottom right:
 - Hover over a country to see its name.
 - Click a pin to see its name and the date you added it, zoom to it, or remove it.
 - Pins are named automatically from the nearest city, for example "Paris, France". Zoom in before dropping a pin if you want an exact spot.
-- Countries with a pin get a warm tint, and the line above the toolbar counts your places and countries.
+- Countries with a pin get a red-ochre wash, and the line above the toolbar counts your places and countries.
 
 ## Keeping your pins safe
 
