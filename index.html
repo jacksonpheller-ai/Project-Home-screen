@@ -133,10 +133,11 @@
     paint-order: stroke fill;
     stroke-linejoin: round;
   }
-  .cl {             /* country: spaced capitals, centred on the label point */
-    font-weight: 600;
-    color: rgba(74, 48, 24, 0.62);
+  .cl {             /* country: spaced capitals in light ink, centred on the label point */
+    font-weight: 400;
+    color: rgba(84, 56, 30, 0.72);
     line-height: 1;
+    -webkit-text-stroke: 2px rgba(236, 224, 194, 0.55);
   }
   .lbl {            /* city: dot (ring for capitals) plus name */
     height: 18px; margin-top: -9px;
@@ -540,7 +541,8 @@ const CONFIG = {
   homeTopLat: 80,          // latitude band the world view tries to show (polar latitudes are cropped to fit)
   homeBottomLat: -57,
   taskbarPx: 48,           // keeps the world view (and the controls) clear of the Windows taskbar
-  iconColumnPx: 96,        // keeps the world view and pin cards clear of the desktop icons on the left (0 = off)
+  iconColumnPx: 220,       // space kept free on the left for desktop icons and folders: the world view and pin cards
+                           // stay right of it (about two icon columns; 0 = off)
   maxZoom: 128,            // upper limit for zooming in, in steps of 2x from the world view
   maxDetailPx: 122880,     // ...and the deepest view never magnifies the map data past this many css px per 360 deg of
                            // longitude (about 330 m per px at the equator: a city and its surroundings, not streets;
@@ -1499,7 +1501,7 @@ var earcut = (function () {
   function computeLayout() {
     readRects();
     const Wc = size.cssW, Hc = size.cssH, hud = rects.hud;
-    const m = Math.max(16, Math.round(Math.min(Wc, Hc) * 0.025));
+    const m = Math.max(20, Math.round(Math.min(Wc, Hc) * 0.035));
     const tb = CONFIG.taskbarPx || 0, xL = Math.max(m, CONFIG.iconColumnPx || 0);
     const hudL = hud.width ? Math.min(hud.left, hud.right - hudWidestWidth()) : Wc;
     const uiLow = placeUi(hudL, m);     // short screens: the toolbar sits at the bottom, left of the HUD column
@@ -3389,65 +3391,39 @@ var earcut = (function () {
     if (DBG) DBG.length = 0;
     const POS = [[0, 0], [0, -1.5], [0, 1.5], [0, -3], [0, 3], [0, -4.5], [0, 4.5],
       [-0.3, 0], [0.3, 0], [-0.3, -1.5], [0.3, -1.5], [-0.3, 1.5], [0.3, 1.5], [-0.5, 0], [0.5, 0]];
+    // Rustic style: a country name is only drawn where it sits wholly on its own country (20 of 21 samples on the
+    // country, none on a neighbour, its middle on land, clear of lakes). If it does not fit, it is tried up to two
+    // sizes smaller, then left out: no names over the sea, across borders or beside islands.
     for (const c of cands) {
       const [x, y] = lonLatToCss(c.labelPt[0], c.labelPt[1]);
       if (x < 0 || x > Wc || y < 0 || y > Hc || !inWorld(x, y)) continue;
       const msz = mainSize[c.i] * s;
       if (msz > 1.6 * big) continue;
       const rank = c.labelRank;
-      const fs = Math.max(9, Math.round(((rank <= 2 ? 12 : rank <= 3 ? 11 : 10) + clamp((wz - 3.3) * 1.4, 0, 5) + fsAdj) * 2) / 2);
-      const text = (wz < 4.6 && c.label.length <= c.name.length ? c.label : c.name).toUpperCase();
-      const ls = Math.round(fs * 0.16 * 100) / 100;
-      const w = textW(text, '600 ' + fs + 'px ' + LFONT, ls) - ls;
-      if (msz < Math.min(w * (rank <= 2 ? 0.55 : 0.7), 160)) { if (DBG) DBG.push([c.name, 'swamp']); continue; }
-      const geo = (cx, cy) => { const b = [cx - w / 2 - 4, cy - fs * 0.72, cx + w / 2 + 4, cy + fs * 0.72]; return onScr(b) && !hit(b) && inWorld(cx, cy) ? b : null; };
-      const tbox = (cx, cy) => [cx - w / 2, cy - fs * 0.36, cx + w / 2, cy + fs * 0.36];
-      let pick = null;
-      const lb = landBox(c, LS);
-      if (insular[c.i] && lb && lb[2] - lb[0] < w + 8 && lb[3] - lb[1] < 6 * fs) {
-        const mx = (lb[0] + lb[2]) / 2, my = (lb[1] + lb[3]) / 2, g = 3;
-        for (const [cx, cy] of [[mx, lb[3] + g + fs * 0.72], [lb[2] + g + 4 + w / 2, my], [mx, lb[1] - g - fs * 0.72], [lb[0] - g - 4 - w / 2, my]]) {
-          const b = geo(cx, cy);
-          if (!b) continue;
-          const cv = coverOf(tbox(cx, cy), c.i, LS);
-          if (cv.other || cv.own > 2 || (lakes && overLake(b, wz))) continue;
-          pick = [cx, cy, b, 'beside'];
+      const fs0 = Math.max(9, Math.round(((rank <= 2 ? 12 : rank <= 3 ? 11 : 10) + clamp((wz - 3.3) * 1.4, 0, 5) + fsAdj) * 2) / 2);
+      const text = (c.label.length <= c.name.length ? c.label : c.name).toUpperCase();
+      let pick = null, fs = fs0, ls = 0, w = 0;
+      for (let k = 0; k < 3 && !pick; k++) {
+        const f = Math.max(8.5, fs0 - k * 1.5);
+        if (k && f === fs) break;
+        fs = f; ls = Math.round(fs * 0.12 * 100) / 100;
+        w = textW(text, '400 ' + fs + 'px ' + LFONT, ls) - ls;
+        if (msz < Math.min(w * 0.8, 160)) continue;
+        for (const [ux, uy] of POS) {
+          const cx = x + ux * w, cy = y + uy * fs;
+          const bb = [cx - w / 2 - 4, cy - fs * 0.72, cx + w / 2 + 4, cy + fs * 0.72];
+          if (!onScr(bb) || hit(bb) || !inWorld(cx, cy)) continue;
+          const cv = coverOf([cx - w / 2, cy - fs * 0.4, cx + w / 2, cy + fs * 0.4], c.i, LS);
+          if (cv.other || cv.own < 20 || !cv.mid) continue;
+          if (lakes && overLake(bb, wz)) continue;
+          pick = [cx, cy, bb, 'on'];
           break;
         }
       }
-      if (!pick) {
-        const wide = msz < w * 1.25 && tall[c.i] < 2.5, isCentre = c.i === centreCi;
-        let pI = null, pB = null, pC = null, pL = null, pZ = null;
-        const why = DBG ? [] : null;
-        for (const [ux, uy] of POS) {
-          const side = ux !== 0, cx = x + ux * w, cy = y + uy * fs, b = geo(cx, cy);
-          if (!b) continue;
-          const cv = coverOf(tbox(cx, cy), c.i, LS);
-          if (why) why.push([ux, uy, cv.own, cv.other, cv.mid ? 1 : 0].join(':'));
-          if (isCentre && !pZ && (cv.mid || cv.own >= 7)) pZ = [cx, cy, b, 'centre'];
-          let grade = 0;
-          if (cv.other === 0 && cv.own >= 11 && (!side || cv.mid)) grade = 1;
-          else if (cv.other === 0 && cv.own >= 7 && (cv.mid || tall[c.i] >= 2.5)) grade = 2;   // a thin coastal country (Chile): beside it over the sea
-          else if (!side && cv.own >= 11 && cv.other <= 3 && cv.mid) grade = 3;
-          else if (!side && wide && cv.mid && ((cv.own >= 9 && cv.other <= 6) || (!uy && cv.own >= (rank <= 2 ? 10 : 12)))) grade = 4;
-          if (!grade) continue;
-          if (lakes && overLake(b, wz)) {
-            const sh = lakeShare(b, wz);
-            if (sh <= (isCentre ? 0.14 : 0.05) && (!pL || sh < pL[4])) pL = [cx, cy, b, 'lake', sh];
-            continue;
-          }
-          if (grade === 1) { pick = [cx, cy, b, 'on']; break; }
-          if (grade === 2 && !pI) pI = [cx, cy, b, 'sea'];
-          if (grade === 3 && !pB) pB = [cx, cy, b, 'corner'];
-          if (grade === 4 && !pC) pC = [cx, cy, b, 'wide'];
-        }
-        pick = pick || pI || pB || pC || pL || pZ;
-        if (why && !pick) DBG.push([c.name, 'why', why.join(' ')]);
-      }
       if (DBG) DBG.push([c.name, pick ? pick[3] : 'none', pick ? Math.round(pick[0] - x) : 0, pick ? Math.round(pick[1] - y) : 0]);
       if (!pick) continue;
-      const [xx, yy, b] = pick;
-      boxes.push(b);
+      const [xx, yy, bx] = pick;
+      boxes.push(bx);
       const el = poolEl('cl', n.cl++);
       setText(el, text);
       const fz = fs + 'px', lz = ls + 'px';

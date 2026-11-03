@@ -58,7 +58,7 @@ Edit the `CONFIG` block near the top of the main `<script>` in `index.html`:
 | `maxZoom` | 128 | Upper limit for zooming in, in 2x steps from the world view |
 | `maxDetailPx` | 122880 | Stops zooming before the map data turns blocky (about 88x on a 1920 px screen; 0 = no limit) |
 | `pinModeTimeoutSec` | 120 | Pin mode turns itself off after this long without a drop (0 = never) |
-| `iconColumnPx` | 96 | Space kept clear on the left for desktop icons (0 = off) |
+| `iconColumnPx` | 220 | Space kept clear on the left for desktop icons and folders, about two icon columns (0 = off) |
 | `coastGlow` | true | Very faint glow along coastlines |
 | `dimControls` | true | Toolbar fades back when the cursor is away from it |
 
