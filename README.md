@@ -29,7 +29,7 @@ The toolbar is in the bottom right:
 | Export | Shows your pins as text, with a Copy button. |
 
 - When zoomed in, clicking the map glides it to centre on that point. At the whole-world view, ordinary clicks do nothing, so stray desktop clicks never move the wallpaper.
-- Hover over a country to see its name.
+- The whole-world view shows no names: hover over a country to see its name. Country names, city names and state/province borders appear once you zoom in, and a pin's name appears once you zoom in to its country (every pin on screen is named from 4x).
 - Click a pin to see its name and the date you added it, zoom to it, or remove it.
 - Pins are named automatically from the nearest city, for example "Paris, France". Zoom in before dropping a pin if you want an exact spot.
 - A ledger below the whole-world map counts the cities, countries, continents and US states you have pinned (it hides while you are zoomed in). US states are worked out from Natural Earth state outlines; Washington, D.C. counts as a city but not a state.
