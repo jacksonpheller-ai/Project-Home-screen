@@ -645,8 +645,8 @@ window.MY_PINS = [
   {"id":"pmw111lijql","lon":-96.01,"lat":41.24,"name":"Omaha, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
   {"id":"pmw111nijrg","lon":-93.7035,"lat":41.5914,"name":"Des Moines, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
   {"id":"pmw111q99do","lon":-104.986,"lat":39.741,"name":"Denver, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
-  {"id":"pmw111zlymm","lon":-74.4377,"lat":40.9701,"name":"New York, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
-  {"id":"pmw1121ff63","lon":-77.5945,"lat":39.1583,"name":"Washington, D.C., United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
+  {"id":"pmw111zlymm","lon":-74.006,"lat":40.7128,"name":"New York, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03","t":1793741937964},
+  {"id":"pmw1121ff63","lon":-77.0365,"lat":38.8977,"name":"Washington, D.C., United States of America","country":"United States of America","iso":"USA","added":"2026-11-03","t":1793741937964},
   {"id":"pmw1127g3um","lon":-118.5205,"lat":34.2813,"name":"Los Angeles, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
   {"id":"pmw112lbrrb","lon":-93.3519,"lat":45.1713,"name":"Minneapolis, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
   {"id":"pmw112o09nv","lon":-112.1801,"lat":40.8032,"name":"Salt Lake City, United States of America","country":"United States of America","iso":"USA","added":"2026-11-03"},
@@ -741,45 +741,95 @@ function buildCalendar(d) {
 
 }
 
-// Optical right alignment of the clock, the date and the calendar: the clock's last digit has a right side bearing and
-// the spaced date line ends in a trailing letter space, so their ink stopped a few px short of the calendar's right
-// edge. Each is shifted right by exactly that gap (measured with the computed font, re-measured on every change).
+// The clock, the date and the calendar form one block with the same left and right edges (the calendar's width):
+//  - the clock is sized so the ink of "00:00" spans that width; each digit sits centred in a fixed-width cell (so the
+//    clock never changes size as the minutes change) and the time's actual ink is centred between the two edges;
+//  - the date keeps its size and its letter spacing is set so its ink spans the width (smaller type if it is too long).
+// Ink extents come from canvas text metrics of the same font; everything is positioned from the left edge of the
+// block, so re-measuring never drifts.
 const alignCtx = document.createElement('canvas').getContext('2d');
-function inkGap(el) {
-  const cs = getComputedStyle(el);
-  let txt = el.textContent || '';
-  if (!txt) return 0;
-  if (cs.textTransform === 'uppercase') txt = txt.toUpperCase();
-  alignCtx.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
-  const m = alignCtx.measureText(txt);
-  const ls = parseFloat(cs.letterSpacing) || 0;
-  let gap = (m.width - m.actualBoundingBoxRight) + ls;
-  // The canvas cannot apply font-variant-numeric (the clock uses tabular digits, whose extra width is shared out on
-  // both sides of each digit), so compare the last character's real advance on the page with the canvas one and add
-  // half the difference.
-  const node = el.firstChild;
-  if (node && node.nodeType === 3 && node.length) {
-    const r = document.createRange();
-    r.setStart(node, node.length - 1); r.setEnd(node, node.length);
-    const domAdv = r.getBoundingClientRect().width - ls, last = txt.slice(-1);
-    const canvasAdv = alignCtx.measureText(last).width;
-    if (domAdv > 0 && Math.abs(domAdv - canvasAdv) < canvasAdv) gap += (domAdv - canvasAdv) / 2;
+const fontOf = (cs, size) => cs.fontStyle + ' ' + cs.fontWeight + ' ' + size + 'px ' + cs.fontFamily;
+let clockFitKey = '', clockFs = 0;
+function clockGeom(txt, cs, fs) {
+  alignCtx.font = fontOf(cs, fs);
+  if ('letterSpacing' in alignCtx) alignCtx.letterSpacing = '0px';
+  let cell = 0;
+  for (const d of '0123456789') cell = Math.max(cell, alignCtx.measureText(d).width);
+  let x = 0, inkL = Infinity, inkR = -Infinity;
+  const glyphs = [];
+  for (const ch of txt) {
+    const m = alignCtx.measureText(ch), w = /\d/.test(ch) ? cell : m.width;
+    const ox = x + (w - m.width) / 2, l = ox - m.actualBoundingBoxLeft, r = ox + m.actualBoundingBoxRight;
+    glyphs.push({ ch, ox, l, r });
+    inkL = Math.min(inkL, l); inkR = Math.max(inkR, r);
+    x += w;
   }
-  return gap;
+  return { glyphs, inkL, inkR };
 }
 function alignHud() {
-  const hm = $('hm'), date = $('date'), ampm = $('ampm'), time = $('time');
-  if (!hm || !date || !time) return;
-  const last = ampm && ampm.textContent ? ampm : hm;
-  // Layout positions (offset*, unaffected by the transform below), so re-measuring never feeds back into itself.
-  // Chrome sizes the clock box a little wider than its text (negative letter-spacing), so that slack is included.
-  // (once the clock box has a transform it becomes the text's offsetParent, so measure in the right frame)
-  const slack = last.offsetParent === time
-    ? time.offsetWidth - (last.offsetLeft + last.offsetWidth)
-    : (time.offsetLeft + time.offsetWidth) - (last.offsetLeft + last.offsetWidth);
-  const tGap = inkGap(last) + Math.max(0, slack);
-  time.style.transform = 'translateX(' + (Math.round(tGap * 10) / 10) + 'px)';
-  date.style.transform = 'translateX(' + (Math.round(inkGap(date) * 10) / 10) + 'px)';
+  const cal = $('cal'), time = $('time'), hm = $('hm'), date = $('date');
+  if (!cal || !time || !hm || !date) return;
+  const W = cal.offsetWidth;
+  if (!W) return;
+  window.HUD_BLOCK_W = W;   // the map layout sizes the clock/calendar column from this
+  const r1 = (v) => Math.round(v * 100) / 100;
+  // clock (24-hour; with AM/PM the old right alignment is kept)
+  const txt = hm.textContent;
+  if (CONFIG.use24Hour && txt) {
+    time.style.fontSize = ''; time.style.letterSpacing = '0px';
+    const cs = getComputedStyle(time);
+    const ref = CONFIG.showSeconds ? '00:00:00' : '00:00';
+    const key = W + '|' + cs.fontSize + '|' + cs.fontFamily + '|' + ref;
+    if (key !== clockFitKey) { const g = clockGeom(ref, cs, 100); clockFs = 100 * W / (g.inkR - g.inkL); clockFitKey = key; }
+    time.style.fontSize = r1(clockFs) + 'px';
+    time.style.width = W + 'px'; time.style.textAlign = 'left'; time.style.whiteSpace = 'nowrap';
+    // Each glyph keeps its shape and the natural gaps; the first glyph's ink starts on the left edge, the last one's
+    // ends on the right edge, and the few px left over (narrow digits such as 11:11) are shared out between the gaps.
+    const g = clockGeom(txt, cs, clockFs), G = g.glyphs;
+    const extra = W - (g.inkR - g.inkL);
+    const gaps = [];
+    let sumG = 0;
+    for (let i = 0; i < G.length - 1; i++) { const gp = Math.max(0, G[i + 1].l - G[i].r); gaps.push(gp); sumG += gp; }
+    const key2 = txt + '|' + clockFs + '|' + W;
+    if (hm.dataset.k !== key2) {
+      let left = 0;
+      hm.replaceChildren(...G.map((gl, i) => {
+        const sp = document.createElement('span');
+        sp.textContent = gl.ch;
+        sp.style.cssText = 'position:absolute;top:0;left:' + r1(left + (gl.ox - gl.l)) + 'px';
+        if (i < gaps.length) left += (gl.r - gl.l) + gaps[i] + extra * (sumG > 0 ? gaps[i] / sumG : 1 / gaps.length);
+        return sp;
+      }));
+      hm.style.cssText = 'display:block;position:relative;height:' + r1(clockFs) + 'px';
+      hm.dataset.k = key2;
+    }
+    time.style.transform = 'none';
+  }
+  // date: same width, by letter spacing
+  date.style.fontSize = ''; date.style.letterSpacing = '';
+  const ds = getComputedStyle(date);
+  let fs = parseFloat(ds.fontSize);
+  let t = date.textContent || '';
+  if (ds.textTransform === 'uppercase') t = t.toUpperCase();
+  const n = Array.from(t).length;
+  if (n > 1) {
+    alignCtx.font = fontOf(ds, fs);
+    if ('letterSpacing' in alignCtx) alignCtx.letterSpacing = '0px';
+    const m = alignCtx.measureText(t);
+    let aL = m.actualBoundingBoxLeft, ink0 = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
+    let ls = (W - ink0) / (n - 1);
+    const minLs = 0.03 * fs, maxLs = 0.32 * fs;
+    if (ls < minLs) { const k = W / (ink0 + (n - 1) * minLs); fs *= k; ink0 *= k; aL *= k; ls = (W - ink0) / (n - 1); }
+    else if (ls > maxLs) {   // a short date ("Monday, May 4"): slightly larger type first (up to 30 %), then wider spacing
+      const k = Math.min(1.3, W / (ink0 + (n - 1) * maxLs));
+      fs *= k; ink0 *= k; aL *= k; ls = (W - ink0) / (n - 1);
+    }
+    const inkW = ink0 + (n - 1) * ls;
+    date.style.fontSize = r1(fs) + 'px';
+    date.style.letterSpacing = r1(ls) + 'px';
+    date.style.width = W + 'px'; date.style.textAlign = 'left'; date.style.whiteSpace = 'nowrap';
+    date.style.transform = 'translateX(' + r1((W - inkW) / 2 + aL) + 'px)';
+  }
 }
 addEventListener('resize', () => setTimeout(alignHud, 50));
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(alignHud);
@@ -1690,6 +1740,7 @@ var earcut = (function () {
   // Measured once per font size with a hidden probe that copies the computed fonts (the HUD itself is not touched).
   let hudProbe = null, hudWideKey = '', hudWideW = 0;
   function hudWidestWidth() {
+    if (window.HUD_BLOCK_W > 0) return window.HUD_BLOCK_W;   // clock, date and calendar share the calendar's width
     const hm = $id('hm'), ap = $id('ampm'), dt = $id('date');
     if (!hm || !dt) return 0;
     const hs = getComputedStyle(hm), as = getComputedStyle(ap || hm), ds = getComputedStyle(dt);
