@@ -169,6 +169,10 @@
   .pin .pd { fill: #ffb46a; stroke: rgba(40, 20, 4, 0.85); stroke-width: 1.25px; }
   .pin.sel .pd { fill: #ffd2a6; }
   .pin .pc { fill: #2b1606; }
+  .pin .pv, .pin .pvo { display: none; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .pin.below .pv, .pin.below .pvo { display: inline; }   /* the place is further south than the drawn map: a small arrow */
+  .pin .pvo { stroke: rgba(4, 8, 17, 0.85); stroke-width: 3.6px; }
+  .pin .pv { stroke: #ffb46a; stroke-width: 1.6px; }
   .pin .ph {           /* head: about 9 px around the head centre (the visible head in pin mode, so nearby places stay droppable) */
     position: absolute; left: -9px; top: -26px; width: 18px; height: 18px; border-radius: 50%;
     pointer-events: auto; cursor: pointer;
@@ -1306,6 +1310,11 @@ var earcut = (function () {
   'use strict';
   const T_START = performance.now();
   const W = decodeWorld(WORLD_DATA);
+  // Natural Earth has a few doubled spaces ('Washington,  D.C.', 'St.  Petersburg'): names are tidied once here, so pin
+  // names, labels and the Export text are clean.
+  const cleanWs = (s) => String(s).replace(/\s+/g, ' ').trim();
+  for (const c of W.countries) { c.name = cleanWs(c.name); if (c.label) c.label = cleanWs(c.label); }
+  if (W.places) for (let i = 0; i < W.places.n; i++) W.places.name[i] = cleanWs(W.places.name[i]);
   const NC = W.countries.length;
   const NLEV = W.levels.length;
   const PI = Math.PI, RAD = PI / 180;
@@ -1372,7 +1381,10 @@ var earcut = (function () {
   /* ---------- layout: the useful area (beside or below the HUD, above the taskbar) and the screen rects to avoid ---------- */
   const layout = { ax: 0.5, ay: 0.5, s0: 1, x0: 0, x1: 1, y0: 0, y1: 1, cyHome: 0.5, cropY: 2, mode: 'side' };
   const HOME_CROP_LAT = -62;       // at the whole-world view nothing south of this is drawn (no Mercator-inflated Antarctica)
+  const HOME_CAP_LAT = -73;        // ...and with Antarctic pins never more than down to this; a pin further south sits at
+                                   // that (faded) edge with a small arrow, and is in its true place once zoomed in
   const PIN_LAT = 84;              // pins nearer the poles than this are drawn at this latitude, so they stay visible
+  const PIN_UP = 26, PIN_DOWN = 4, PIN_DOWN_BELOW = 11;   // css px a pin marker reaches above / below its tip (with the arrow)
   const NORECT = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
   let pins = [], tomb = new Map(), pinsVer = 0, clockT = 0;   // the pins (see the pins section)
   const rects = { hud: NORECT, dock: NORECT, stats: NORECT, ui: NORECT };
@@ -1447,22 +1459,71 @@ var earcut = (function () {
   // The band below the HUD spans the HUD's columns, so it is only used when everything drawn at the home view (85N down
   // to the crop) fits inside it: on 4:3 and 5:4 screens the band would have to crop the Arctic, which then reached up
   // under the calendar, so those screens use the side layout.
+  // Every pin is inside the useful rectangle at the home view, whole marker included (a Svalbard pin on a 21:9 screen, a
+  // Falklands pin above the taskbar): the band shifts towards the pins, and only when they do not fit together with
+  // 72N..47S does the world get a little smaller. Pins south of HOME_CAP_LAT count as sitting at that edge.
+  function pinExtent() {
+    let t = Infinity, b = -Infinity, lo = 90, below = false;
+    for (const p of pins) {
+      const lat = clamp(p.lat, -PIN_LAT, PIN_LAT);
+      t = Math.min(t, mercY(lat));
+      b = Math.max(b, mercY(Math.max(lat, HOME_CAP_LAT)));
+      if (p.lat < lo) lo = p.lat;
+      if (p.lat < HOME_CAP_LAT) below = true;
+    }
+    return pins.length ? { t, b, lo, foot: below ? PIN_DOWN_BELOW : PIN_DOWN } : null;
+  }
+  // Short screens (a CSS height of about 560 px or less: 1280x720 or 1366x768 at 150 %, 1920x1080 at 200 %): the HUD
+  // column reaches down to where the stats line and the toolbar sit, so they move to the bottom left of the HUD column
+  // (the HUD itself is not touched) and the world view keeps above them. Decided from the HUD's bottom and the
+  // toolbar's own height, so it does not depend on where the toolbar was before.
+  function placeUi(hudL, m) {
+    const uiEl = dockEl.parentNode, hud = rects.hud, d = rects.dock;
+    if (!d.height) return false;
+    const statsH = statsEl.offsetHeight || 0;
+    const bottom = parseFloat(getComputedStyle(uiEl).bottom) || 72;
+    const top = size.cssH - bottom - d.height - (statsH ? statsH + 8 : 0);
+    const low = hud.width > 0 && top < hud.bottom + 8 && hudL - 16 - d.width >= Math.max(m, CONFIG.iconColumnPx || 0) + 8;
+    const want = low ? Math.round(size.cssW - hudL + 16) + 'px' : '';
+    if (uiEl.style.right !== want) { uiEl.style.right = want; readRects(); }
+    return low;
+  }
+  // At the whole-world view nothing south of HOME_CROP_LAT is drawn. When a pin lies further south (Antarctica), the
+  // crop moves down to 2.5 degrees below it so the land under it is drawn, but never below HOME_CAP_LAT: no
+  // Mercator-inflated slab of Antarctica. The crop edge is faded out (see frameGeom), never a ruler-straight cut.
+  function homeCropY(ext) {
+    let c = mercY(HOME_CROP_LAT);
+    if (ext && ext.lo < HOME_CROP_LAT + 1.5) c = Math.max(c, mercY(Math.max(HOME_CAP_LAT, ext.lo - 2.5)));
+    return c;
+  }
   function computeLayout() {
     readRects();
-    const Wc = size.cssW, Hc = size.cssH, hud = rects.hud, ui = rects.ui;
+    const Wc = size.cssW, Hc = size.cssH, hud = rects.hud;
     const m = Math.max(16, Math.round(Math.min(Wc, Hc) * 0.025));
     const tb = CONFIG.taskbarPx || 0, xL = Math.max(m, CONFIG.iconColumnPx || 0);
-    const pT = mercY(CONFIG.homeTopLat), pB = mercY(CONFIG.homeBottomLat), mT = mercY(72), mB = mercY(-47);
-    const cT = 0, cB = mercY(HOME_CROP_LAT);
-    const fit = (r, need) => { r.Wu = r.x1 - r.x0; r.Hu = r.y1 - r.y0; r.s = r.Wu >= 80 && r.Hu >= 60 ? Math.min(r.Wu, r.Hu / need) : 0; return r; };
     const hudL = hud.width ? Math.min(hud.left, hud.right - hudWidestWidth()) : Wc;
+    const uiLow = placeUi(hudL, m);     // short screens: the toolbar sits at the bottom, left of the HUD column
+    const ui = rects.ui;
+    const pT = mercY(CONFIG.homeTopLat), pB = mercY(CONFIG.homeBottomLat), mT = mercY(72), mB = mercY(-47);
+    const ext = pinExtent();
+    const cT = 0, cB0 = mercY(HOME_CROP_LAT), cB = homeCropY(ext);
+    // constraints [world y, css px the content reaches beyond it]: the top ones must stay below the useful rectangle's
+    // top, the bottom ones above its bottom
+    const pinTop = ext ? [[ext.t, PIN_UP]] : [], pinBot = ext ? [[ext.b, ext.foot]] : [];
+    const fit = (r, tops, bots) => {
+      r.Wu = r.x1 - r.x0; r.Hu = r.y1 - r.y0; r.tops = tops; r.bots = bots;
+      let s = r.Wu;
+      for (const [t, a] of tops) for (const [b, c] of bots) if (b > t) s = Math.min(s, (r.Hu - a - c) / (b - t));
+      r.s = r.Wu >= 80 && r.Hu >= 60 && s > 0 ? s : 0;
+      return r;
+    };
     let right = Wc;
     if (hud.width) right = Math.min(right, hudL);
-    if (ui.width) right = Math.min(right, ui.left);
-    const side = fit({ mode: 'side', x0: xL, x1: right - m, y0: m, y1: Hc - tb - m }, mB - mT);
-    const band = hud.width ? fit({ mode: 'band', x0: xL, x1: Wc - m, y0: hud.bottom + m, y1: Math.min(Hc - tb, ui.width ? ui.top : Hc) - m }, cB - cT) : { s: 0 };
+    if (ui.width && !uiLow) right = Math.min(right, ui.left);
+    const side = fit({ mode: 'side', x0: xL, x1: right - m, y0: m, y1: Math.min(Hc - tb, uiLow ? ui.top : Hc) - m }, [[mT, 0]].concat(pinTop), [[mB, 0]].concat(pinBot));
+    const band = hud.width ? fit({ mode: 'band', x0: xL, x1: Wc - m, y0: hud.bottom + m, y1: Math.min(Hc - tb, ui.width ? ui.top : Hc) - m }, [[cT, 0]].concat(pinTop), [[cB, 0]].concat(pinBot)) : { s: 0 };
     let u = band.s > side.s * 1.05 ? band : side;
-    if (!u.s) u = fit({ mode: 'full', x0: m, x1: Wc - m, y0: m, y1: Math.max(m + 120, Hc - tb - m) }, mB - mT);   // tiny windows
+    if (!u.s) u = fit({ mode: 'full', x0: m, x1: Wc - m, y0: m, y1: Math.max(m + 120, Hc - tb - m) }, [[mT, 0]].concat(pinTop), [[mB, 0]].concat(pinBot));   // tiny windows
     const s0 = Math.max(1, u.s || u.Wu), Hu = u.Hu, ay = (u.y0 + u.y1) / 2;
     let cy;
     if ((cB - cT) * s0 <= Hu) {
@@ -1472,29 +1533,36 @@ var earcut = (function () {
     }
     else if ((pB - pT) * s0 <= Hu) { const h = Hu / 2 / s0; cy = clamp((cT + cB) / 2, pB - h, pT + h); }
     else { const h = Hu / 2 / s0; cy = clamp((cT + cB) / 2, mB - h, mT + h); }
+    // then every constraint (the pins, and 72N..47S or in the band everything drawn) inside the useful rectangle
+    let lo = -Infinity, hi = Infinity;
+    for (const [t, a] of u.tops) hi = Math.min(hi, t + (ay - u.y0 - a) / s0);
+    for (const [b, c] of u.bots) lo = Math.max(lo, b - (u.y1 - ay - c) / s0);
+    cy = lo <= hi + 1e-12 ? clamp(cy, lo, Math.max(lo, hi)) : (lo + hi) / 2;
     layout.x0 = u.x0; layout.x1 = u.x1; layout.y0 = u.y0; layout.y1 = u.y1; layout.mode = u.mode;
     layout.ax = (u.x0 + u.x1) / 2; layout.ay = (u.y0 + u.y1) / 2; layout.s0 = s0; layout.cyHome = cy;
-    layout.cropBase = cB;
-    layout.m = m; layout.xL = xL; layout.hudL = hudL;
+    layout.cropBase = cB; layout.cropY = cB;
+    layout.m = m; layout.xL = xL; layout.hudL = hudL; layout.uiLow = uiLow;
     // Zooming in from the home view keeps the middle of the drawn world where it is on screen (the view centre in
     // landscape; in portrait the world sits above the anchor in the middle of the band below the HUD).
-    const yTop = layout.ay + (cT - cy) * s0, yBot = layout.ay + (cB - cy) * s0;
+    const yTop = layout.ay + (cT - cy) * s0, yBot = layout.ay + (cB0 - cy) * s0;
     layout.homeMidY = (Math.max(yTop, 0) + Math.min(yBot, Hc - tb)) / 2;
-    updateCrop();
   }
-  // At the whole-world view nothing south of HOME_CROP_LAT is drawn. When a pin lies further south (Antarctica), the
-  // crop moves down just far enough to show the land under it (in the portrait band: as far as the band allows; a pin
-  // still below the crop is hidden at that view, like one beside the single world copy).
-  function updateCrop() {
-    let lo = 90;
-    for (const p of pins) if (p.lat < lo) lo = p.lat;
-    let c = layout.cropBase;
-    if (lo < HOME_CROP_LAT + 1.5) {
-      let want = mercY(Math.max(-PIN_LAT, lo) - 2.5);
-      if (layout.mode === 'band') want = Math.min(want, layout.cyHome + (layout.y1 - layout.ay) / layout.s0);
-      c = Math.max(c, Math.min(1, want));
-    }
-    layout.cropY = c;
+  // Pins added, removed or merged from another instance can change the home fit (an Antarctic or Svalbard pin). At the
+  // home view the map glides to the new fit (a smaller world zooms out smoothly; a larger one is set at once); elsewhere
+  // the view keeps its absolute scale.
+  function refitHome() {
+    const atHome = anim ? sameView(anim.to, homeView()) : isHome();
+    const s0 = layout.s0, cy = layout.cyHome;
+    computeLayout();
+    if (layout.s0 === s0 && layout.cyHome === cy) return;
+    if (anim) { view = anim.to; anim = null; normalizeView(); }
+    const k = s0 / layout.s0;
+    view = { cx: view.cx, cy: view.cy, z: view.z * k };
+    descCache = null; labelKey = ''; intent = null;
+    if (atHome && k >= 1 - 1e-9 && !reducedMotion && !document.hidden) { view = clampView(view); animateTo(homeView(), { dur: 380 }); }
+    else if (atHome) view = homeView();
+    else view = clampView(view);
+    zoomButtons();
   }
 
   /* ---------- view: centre in world units (cx unbounded while animating), zoom 1 = the whole world in the useful area ---------- */
@@ -1555,7 +1623,11 @@ var earcut = (function () {
     return [layout.ax + dx * s, layout.ay + (wy - v.cy) * s];
   }
   const lonLatToCss = (lon, lat) => worldToCss(xOfLon(normLon(lon)), mercY(lat));
-  const pinXY = (p) => lonLatToCss(p.lon, clamp(p.lat, -PIN_LAT, PIN_LAT));
+  // A pin's tip on screen. Near the whole-world view a pin south of the southern crop (HOME_CAP_LAT) sits on the crop
+  // edge (pinBelow: it shows a small arrow), and slides down to its true place as the crop moves away when zooming in.
+  const pinWY = (p) => mercY(clamp(p.lat, -PIN_LAT, PIN_LAT));
+  const pinBelow = (p) => { const c = cropWY(view); return c < 1 && pinWY(p) > c - 1e-9; };
+  const pinXY = (p) => { const c = cropWY(view), y = pinWY(p); return worldToCss(xOfLon(normLon(p.lon)), c < 1 && y > c - 1e-9 ? c - 1e-9 : y); };
   // Is a screen point on the drawn world? While the world is narrower than the screen only one copy of it is drawn
   // (centred on the view); with y, also inside the Mercator square and above the southern crop of the world view.
   function inWorld(x, y, v) {
@@ -1721,12 +1793,19 @@ var earcut = (function () {
       clip = [a, 0, b, size.devH];
     }
     const cw = cropWY(v);
+    let fade = null;
     if (cw < 1) {
-      const yb = clamp(Math.round(ayd + (cw - v.cy) * scale), 0, size.devH);
+      const ybf = ayd + (cw - v.cy) * scale, yb = clamp(Math.round(ybf), 0, size.devH);
       if (yb < size.devH) clip = clip ? [clip[0], 0, clip[2], yb] : [0, 0, size.devW, yb];
+      // The crop edge is not a ruler-straight cut: land, lines and meridians fade out over the last FADE_W world units
+      // above it (about 3 degrees of latitude near Antarctica, at least 16 css px; wider while zooming, so the moving
+      // edge stays soft).
+      const fw = Math.max(16 * dprY, (FADE_W + 0.25 * (v.z - 1)) * scale);
+      if (ybf - fw < size.devH && ybf > 0) fade = [ybf - fw, ybf];
     }
-    return { dpr, scale, axd, ayd, xl, xr, clip, k0: Math.floor(xl), k1: Math.floor(xr - 1e-12) };
+    return { dpr, scale, axd, ayd, xl, xr, clip, fade, k0: Math.floor(xl), k1: Math.floor(xr - 1e-12) };
   }
+  const FADE_W = 0.035;
 
   /* ================================================================ WebGL2 renderer ================================================================ */
   const GLR = (function () {
@@ -1797,8 +1876,10 @@ var earcut = (function () {
     const FS_COMMON = `#version 300 es
       precision highp float;
       uniform vec2 u_center; uniform float u_scale; uniform vec2 u_vp; uniform vec2 u_anchor;
+      uniform vec2 u_fade;           // the southern crop's fade: from row x (fully drawn) to row y (gone), device px from the top
       const float PI = 3.141592653589793;
       vec2 fragPx() { return vec2(gl_FragCoord.x, u_vp.y - gl_FragCoord.y); }
+      float fadeK() { return u_fade.y > u_fade.x ? 1.0 - smoothstep(u_fade.x, u_fade.y, fragPx().y) : 1.0; }
       vec2 fragWorld() { return u_center + (fragPx() - u_anchor) / u_scale; }
       float latOf(float y) { return atan(sinh((0.5 - y) * 2.0 * PI)); }
       // +-0.5/255 of interleaved-gradient noise: breaks the 1/255 steps of the dark gradients into a fine dither
@@ -1806,8 +1887,10 @@ var earcut = (function () {
       out vec4 o;
     `;
     // Ocean: soft vignette plus a faint graticule computed analytically (exact 1 device-px lines, no geometry).
+    // As the fade pass (u_fadePass = 1) it is drawn again over the crop's fade rows, without meridians, with alpha
+    // 1 - fade: the land there blends into the ocean and the meridians thin out with it.
     const BG_FS = FS_COMMON + `
-      uniform vec3 u_ocean; uniform vec3 u_edge; uniform vec4 u_grid; uniform float u_step; uniform float u_latMin; uniform float u_parMin;
+      uniform vec3 u_ocean; uniform vec3 u_edge; uniform vec4 u_grid; uniform float u_step; uniform float u_latMin; uniform float u_parMin; uniform float u_fadePass;
       void main() {
         vec2 f = fragPx(); vec2 w = fragWorld();
         vec2 q = (f / u_vp - 0.5) * vec2(u_vp.x / u_vp.y, 1.0);
@@ -1818,9 +1901,9 @@ var earcut = (function () {
         float latN = clamp(floor(lat / u_step + 0.5) * u_step, u_parMin, floor(85.0 / u_step + 1e-4) * u_step);
         float yN = 0.5 - log(tan(PI * 0.25 + radians(latN) * 0.5)) / (2.0 * PI);
         float dp = abs(w.y - yN) * u_scale;
-        float g = max(clamp(1.0 - dm, 0.0, 1.0) * step(lat, 85.06) * step(u_latMin, lat), clamp(1.0 - dp, 0.0, 1.0));
+        float g = max(clamp(1.0 - dm, 0.0, 1.0) * step(lat, 85.06) * step(u_latMin, lat) * (1.0 - u_fadePass), clamp(1.0 - dp, 0.0, 1.0));
         col = mix(col, u_grid.rgb, u_grid.a * g);
-        o = vec4(col + dith(), 1.0);
+        o = vec4(col + dith(), u_fadePass > 0.5 ? 1.0 - fadeK() : 1.0);
       }`;
     // Composite: night shade for the current sun position, then the line layers, premultiplied over the map.
     const COMP_FS = FS_COMMON + `
@@ -1830,8 +1913,9 @@ var earcut = (function () {
       uniform vec3 u_sun;            // sin(dec), cos(dec), subsolar lon (rad)
       vec4 over(vec4 dst, vec4 col, float cov) { float a = col.a * cov; return vec4(col.rgb * a + dst.rgb * (1.0 - a), a + dst.a * (1.0 - a)); }
       void main() {
-        vec4 cov = texelFetch(u_cov, ivec2(gl_FragCoord.xy), 0);
-        vec2 dyn = u_hasDyn > 0.5 ? texelFetch(u_cov2, ivec2(gl_FragCoord.xy), 0).rg : vec2(0.0);
+        float fk = fadeK();
+        vec4 cov = texelFetch(u_cov, ivec2(gl_FragCoord.xy), 0) * fk;
+        vec2 dyn = (u_hasDyn > 0.5 ? texelFetch(u_cov2, ivec2(gl_FragCoord.xy), 0).rg : vec2(0.0)) * fk;
         vec2 w = fragWorld();
         float lat = latOf(clamp(w.y, 0.0, 1.0));
         float lon = (w.x * 2.0 - 1.0) * PI;
@@ -1954,6 +2038,7 @@ var earcut = (function () {
       gl.uniform2f(prog.u.u_vp, size.devW, size.devH);
       if (prog.u.u_anchor) gl.uniform2f(prog.u.u_anchor, g.axd, g.ayd);
       if (prog.u.u_xoff) gl.uniform1f(prog.u.u_xoff, xoff);
+      if (prog.u.u_fade) gl.uniform2f(prog.u.u_fade, g.fade ? g.fade[0] : 0, g.fade ? g.fade[1] : 0);
     }
     function segTexture(tex, data) {        // 4 floats (x0, y0, x1, y1) per segment, SEG_W segments per row
       const n = data.length >> 2, rows = Math.max(1, Math.ceil(n / SEG_W));
@@ -2048,10 +2133,11 @@ var earcut = (function () {
       frameKey = fk; lastHover = st.hover;
       if (part && part[2] <= part[0]) return true;       // the hover change is off screen: nothing to redraw
       // scissor = (the partial rectangle, if any) intersected with (the single world copy / southern crop, if clipped)
-      const scissor = (useClip) => {
+      const scissor = (useClip, extra) => {
         let r = part || [0, 0, size.devW, size.devH];
         if (useClip && sc) r = [Math.max(r[0], sc[0]), Math.max(r[1], sc[1]), Math.min(r[2], sc[2]), Math.min(r[3], sc[3])];
-        if (!part && !(useClip && sc)) { gl.disable(gl.SCISSOR_TEST); return; }
+        if (extra) r = [Math.max(r[0], extra[0]), Math.max(r[1], extra[1]), Math.min(r[2], extra[2]), Math.min(r[3], extra[3])];
+        if (!part && !(useClip && sc) && !extra) { gl.disable(gl.SCISSOR_TEST); return; }
         gl.enable(gl.SCISSOR_TEST);
         gl.scissor(r[0], size.devH - r[3], Math.max(0, r[2] - r[0]), Math.max(0, r[3] - r[1]));
       };
@@ -2123,6 +2209,7 @@ var earcut = (function () {
       const gMin = gridLatMin(v);
       gl.uniform1f(P.bg.u.u_latMin, gMin);
       gl.uniform1f(P.bg.u.u_parMin, gridParMin(gMin, gstep));
+      gl.uniform1f(P.bg.u.u_fadePass, 0);
       gl.bindVertexArray(emptyVao);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -2149,6 +2236,22 @@ var earcut = (function () {
         }
       }
       scissor(false);
+
+      // 3b) the crop's fade rows: the ocean again (no meridians) over the land, with alpha rising to 1 at the crop edge
+      if (g.fade) {
+        const fr = [0, Math.max(0, Math.floor(g.fade[0])), size.devW, Math.min(size.devH, Math.ceil(g.fade[1]))];
+        if (fr[3] > fr[1]) {
+          scissor(false, fr);
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.useProgram(P.bg.p);
+          gl.uniform1f(P.bg.u.u_fadePass, 1);
+          gl.bindVertexArray(emptyVao);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+          gl.uniform1f(P.bg.u.u_fadePass, 0);
+          gl.disable(gl.BLEND);
+        }
+      }
 
       // 4) night shade + lines on top
       scissor(false);
@@ -2387,6 +2490,7 @@ var earcut = (function () {
     // The night shade is computed per sample on a small grid (the same formula as the WebGL shader) and scaled up with
     // smoothing, so the terminator is a soft gradient. While the view animates, frames are drawn directly.
     let ctx = null, base = null, bctx = null, baseKey = '', nightC = null, nctx = null, nightKey = '', ver = 0;
+    let fadeC = null, fctx = null, fadeKey = '';
     const css = (c) => `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)},${c[3]})`;
     function init() {
       try { ctx = c2dCanvas.getContext('2d', { alpha: false }); } catch (e) { ctx = null; }
@@ -2483,6 +2587,39 @@ var earcut = (function () {
       c.strokeStyle = css(C.hoverLine); c.lineWidth = Math.max(1, G.g.dpr); c.stroke(out);
       c.restore();
     }
+    // The southern crop's fade rows: the ocean and the parallels (no meridians) drawn over the map with alpha rising
+    // to 1 at the crop edge (smoothstep, as in the WebGL shader), so land, lines and meridians fade out together.
+    function drawFade(G, c) {
+      const fd = G.g.fade;
+      if (!fd) return;
+      const { v, Wd, Hd, Y } = G;
+      const y0 = Math.max(0, Math.floor(fd[0])), y1 = Math.min(Hd, Math.ceil(fd[1])), h = y1 - y0;
+      if (h <= 0) return;
+      const key = [Wd, Hd, y0, y1, fd[0], fd[1], v.cy, v.z, G.WW, G.oy, ver].join(',');
+      if (!fadeC) { fadeC = document.createElement('canvas'); fctx = fadeC.getContext('2d'); }
+      if (key !== fadeKey) {
+        if (fadeC.width !== Wd) fadeC.width = Wd;
+        if (fadeC.height !== h) fadeC.height = h; else fctx.clearRect(0, 0, Wd, h);
+        const f = fctx;
+        f.setTransform(1, 0, 0, 1, 0, -y0);
+        const gr = f.createRadialGradient(Wd / 2, Hd / 2, 0, Wd / 2, Hd / 2, Math.hypot(Wd, Hd) * 0.6);
+        gr.addColorStop(0, css(C.ocean)); gr.addColorStop(1, css(C.oceanEdge));
+        f.fillStyle = gr; f.fillRect(0, y0, Wd, h);
+        const zl = Math.log2(v.z), step = zl < 0.9 ? 15 : zl < 1.9 ? 10 : zl < 2.9 ? 5 : zl < 3.9 ? 2 : zl < 4.9 ? 1 : 0.5;
+        f.strokeStyle = css(C.grid); f.lineWidth = 1; f.beginPath();
+        for (let la = gridParMin(gridLatMin(v), step); la <= GRID_LAT; la += step) { const y = Math.round(Y(la)) + 0.5; if (y > y0 - 1 && y < y1 + 1) { f.moveTo(0, y); f.lineTo(Wd, y); } }
+        f.stroke();
+        f.setTransform(1, 0, 0, 1, 0, 0);
+        f.globalCompositeOperation = 'destination-in';
+        const lg = f.createLinearGradient(0, fd[0] - y0, 0, fd[1] - y0);
+        for (let i = 0; i <= 8; i++) { const t = i / 8; lg.addColorStop(t, 'rgba(0,0,0,' + (t * t * (3 - 2 * t)).toFixed(4) + ')'); }
+        f.fillStyle = lg; f.fillRect(0, 0, Wd, h);
+        f.globalCompositeOperation = 'source-over';
+        fadeKey = key;
+      }
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.drawImage(fadeC, 0, y0);
+    }
     function drawNight(G, c) {
       const { v, g, Wd, Hd } = G;
       const f = Math.max(4, Math.ceil(Math.max(Wd, Hd) / 256));        // device px per sample
@@ -2531,12 +2668,13 @@ var earcut = (function () {
         ctx.drawImage(base, 0, 0);
       }
       drawHover(st, G, ctx);
+      drawFade(G, ctx);
       if (CONFIG.showNight) drawNight(G, ctx);
       return true;
     }
     // release the bitmaps (WebGL2 is back in use)
-    function free() { if (base) { base.width = base.height = 1; } if (nightC) { nightC.width = nightC.height = 1; } baseKey = nightKey = ''; }
-    return { init, render, free, invalidate() { ver++; baseKey = nightKey = ''; } };
+    function free() { if (base) { base.width = base.height = 1; } if (nightC) { nightC.width = nightC.height = 1; } if (fadeC) { fadeC.width = fadeC.height = 1; } baseKey = nightKey = fadeKey = ''; }
+    return { init, render, free, invalidate() { ver++; baseKey = nightKey = fadeKey = ''; } };
   })();
 
   /* ---------- renderer selection, context loss ---------- */
@@ -2640,14 +2778,22 @@ var earcut = (function () {
   const stamp = () => (clockT = Math.max(Date.now(), clockT + 1));
   // The clock also learns every time stamp it sees (stored, merged, embedded), so a new event always wins over them:
   // a pin stamped while the PC clock was ahead (or by another instance with a fast clock) can still be removed.
-  const seeT = (t) => { if (t > clockT && isFinite(t)) clockT = Math.min(t, Date.now() + 3.15e12); };
+  const T_CAP = 3.15e12;           // about 100 years
+  const seeT = (t) => { if (t > clockT && isFinite(t)) clockT = Math.min(t, Date.now() + T_CAP); };
+  // A time stamp further ahead than that cap (a corrupted store, a hand-edited MY_PINS entry) is not a time: it counts
+  // as 0 (age unknown), for pins and removals alike, so a new removal always beats it. (Clamping it to now + cap
+  // instead would be a moving value: the same stored entry, read again a moment later, would come back newer than
+  // its removal.)
+  const validT = (t) => { t = +t; return isFinite(t) && t > 0 && t <= Date.now() + T_CAP ? Math.round(t) : 0; };
+  // a time stamp newer than t (a removal newer than the pin it removes, a restore newer than that removal)
+  const stampAfter = (t) => { const s = Math.max(stamp(), (+t || 0) + 1); if (s > clockT) clockT = s; return s; };
   function tombsOf(st) {
     const m = new Map();
     if (st && Array.isArray(st.removed)) for (const r of st.removed) {
       let id = null, t = 0;
       if (typeof r === 'string') id = r;
-      else if (Array.isArray(r) && typeof r[0] === 'string') { id = r[0]; t = +r[1] || 0; }
-      else if (r && typeof r === 'object' && typeof r.id === 'string') { id = r.id; t = +r.t || 0; }
+      else if (Array.isArray(r) && typeof r[0] === 'string') { id = r[0]; t = validT(r[1]); }
+      else if (r && typeof r === 'object' && typeof r.id === 'string') { id = r.id; t = validT(r.t); }
       if (id) { id = id.slice(0, 64); if (!(m.get(id) >= t)) m.set(id, t); }
     }
     return m;
@@ -2741,7 +2887,7 @@ var earcut = (function () {
     let lon = +p.lon, lat = +p.lat;
     if (!isFinite(lon) || !isFinite(lat) || Math.abs(lat) > 90) return null;
     lon = round4(normLon(lon)); lat = round4(lat);
-    let name = typeof p.name === 'string' && p.name ? p.name.slice(0, 200) : '', country = typeof p.country === 'string' ? p.country.slice(0, 120) : '', iso = typeof p.iso === 'string' ? p.iso.slice(0, 8) : '';
+    let name = typeof p.name === 'string' && p.name ? cleanWs(p.name).slice(0, 200) : '', country = typeof p.country === 'string' ? cleanWs(p.country).slice(0, 120) : '', iso = typeof p.iso === 'string' ? p.iso.slice(0, 8) : '';
     if (!name || (!iso && !country)) {
       const d = W.describe(lon, lat, { radiusKm: 50 });
       if (!name) name = d.label;
@@ -2749,8 +2895,8 @@ var earcut = (function () {
       if (!iso) iso = d.iso3;
     }
     name = tidyName(name, country);
-    const t = +p.t;
-    return { id: typeof p.id === 'string' && p.id ? p.id.slice(0, 64) : hashId(lon, lat), lon, lat, name, country, iso, added: typeof p.added === 'string' ? p.added.slice(0, 32) : '', t: isFinite(t) && t > 0 ? Math.round(t) : 0 };
+    // a time stamp beyond the clock's cap (see validT) counts as 0, so a new removal can always beat it
+    return { id: typeof p.id === 'string' && p.id ? p.id.slice(0, 64) : hashId(lon, lat), lon, lat, name, country, iso, added: typeof p.added === 'string' ? p.added.slice(0, 32) : '', t: validT(p.t) };
   }
   // window.MY_PINS lives in its own small <script> block, so a typing mistake there only loses those pins.
   let myPinsBroken = false;
@@ -2793,9 +2939,9 @@ var earcut = (function () {
     pinsVer++;
     pruneUndo();
     refreshVisited();
-    updateCrop();
-    syncPinEls();
     updateStats();
+    refitHome();
+    syncPinEls();
     bUndo.disabled = undoStack.length === 0;
     const u = undoStack[undoStack.length - 1];
     bUndo.dataset.tip = u ? (u.type === 'add' ? 'Undo: remove ' : 'Undo: restore ') + shortName(u.pin) : 'Nothing to undo';
@@ -2815,7 +2961,7 @@ var earcut = (function () {
     if (i < 0) return null;
     const p = pins[i];
     pins.splice(i, 1);
-    tomb.set(p.id, stamp());
+    tomb.set(p.id, stampAfter(p.t));
     if (!fromUndo) undoStack.push({ type: 'remove', pin: p, index: i });
     if (selectedId === id) closeCard();
     writeStore();
@@ -2829,7 +2975,7 @@ var earcut = (function () {
     lastDrop = null;
     if (u.type === 'add') { removePin(u.pin.id, true); toast('Removed <b>' + esc(shortName(u.pin)) + '</b>'); }
     else {
-      const p = Object.assign({}, u.pin, { t: stamp() });     // newer than its removal, here and in other instances
+      const p = Object.assign({}, u.pin, { t: stampAfter(tomb.get(u.pin.id)) });     // newer than its removal, here and in other instances
       pins.splice(Math.min(u.index, pins.length), 0, p);
       writeStore(); pinsChanged();
       toast('Restored <b>' + esc(shortName(p)) + '</b>');
@@ -2865,7 +3011,7 @@ var earcut = (function () {
           g = { label: P.name[best] + ', ' + C.name, country: C.name, iso3: C.iso3, place: best };
         }
       }
-      d = { lon, lat, name: tidyName(g.label, g.country), country: g.country, iso: g.iso3 };
+      d = { lon, lat, name: tidyName(g.label, g.country), country: g.country, iso: g.iso3, place: g.place };
       // Zoomed out, a click cannot land closer than a few px to the place it is meant for: a pin named after a place
       // within that distance is put on the place itself, so 'Paris' sits on Paris when zoomed right in later. Zoomed in
       // (under 1 km per px) the click is precise and is kept as it is.
@@ -2878,15 +3024,24 @@ var earcut = (function () {
     return d;
   }
   // A pin-mode click opens an existing pin instead of adding a near-duplicate:
-  //  - on a pin's body (the lower part of the teardrop): it opens that pin, unless the click is right on another notable
-  //    place (within 3.5 px of a city important enough for this zoom) and would be named differently - so at the
-  //    whole-world view Amsterdam can still be pinned where Brussels' marker covers it;
+  //  - on a pin's body (the lower part of the teardrop) or its head: it opens that pin, unless the click is right on
+  //    another notable place (within 3.5 px of a city important enough for this zoom) and would be named differently -
+  //    so at the whole-world view Amsterdam can still be pinned where Brussels' marker covers it, and Melbourne where
+  //    Hobart's head covers it (a head click on a place that already has its own pin opens the clicked pin);
   //  - elsewhere: it opens a pin whose tip is within 8 px when the click would get the same name (two sea points count
   //    as the same), so the tip, its shadow and a re-click next to it do not add a copy.
-  function notablePlaceNear(x, y, exclude) {
+  // (A head click is where one clicks to open a pin, so it asks for more: the click must be named after that place, and
+  // the place must be a more important one than for a body click.)
+  function notablePlaceNear(x, y, exclude, head) {
     const P = W.places;
     if (!P) return false;
-    const B = boxLL([x - 3.5, y - 3.5, x + 3.5, y + 3.5]), lim = Math.max(5, webZoom(view) + 3.2);
+    const B = boxLL([x - 3.5, y - 3.5, x + 3.5, y + 3.5]), lim = head ? Math.max(4, webZoom(view) + 2) : Math.max(5, webZoom(view) + 3.2);
+    if (head) {
+      const d = describeAt(x, y), i = d ? d.place : -1;
+      if (!(i >= 0) || P.minZoom[i] > lim || P.name[i] === exclude) return false;
+      const [px, py] = lonLatToCss(P.lon[i], P.lat[i]);
+      return Math.hypot(px - x, py - y) <= 3.5;
+    }
     for (let i = 0; i < P.n; i++) {
       if (P.lat[i] < B[1] || P.lat[i] > B[3] || P.minZoom[i] > lim || P.name[i] === exclude) continue;
       let lon = P.lon[i];
@@ -2897,12 +3052,12 @@ var earcut = (function () {
     }
     return false;
   }
-  function pinTarget(x, y, bodyId) {
+  function pinTarget(x, y, bodyId, head) {
     const d = describeAt(x, y);
-    if (!d) return null;
+    if (!d) return head ? { open: bodyId } : null;
     if (bodyId) {
       const bp = pins.find((p) => p.id === bodyId);
-      if (bp && (bp.name === d.name || !notablePlaceNear(x, y, shortName(bp)))) return { open: bodyId, d };
+      if (bp && (bp.name === d.name || !notablePlaceNear(x, y, shortName(bp), head))) return { open: bodyId, d };
     }
     let best = null, bd = Infinity;
     for (const p of pins) {
@@ -2911,20 +3066,21 @@ var earcut = (function () {
       const [px, py] = pinXY(p), dist = Math.hypot(px - x, py - y);
       if (dist <= 8 && dist < bd && (p.name === d.name || (/\u00b0/.test(p.name) && /\u00b0/.test(d.name)))) { bd = dist; best = p; }
     }
+    if (head && best) return { open: bodyId, d };
     return best ? { open: best.id, d } : { d };
   }
   // Pin mode click handling shared by the map and the pin bodies: a quick second click on the spot of the last drop (a
   // double or triple click: within 500 ms and 3 px, or 8 px with the same name) is ignored; otherwise the click opens a
   // pin (see pinTarget) or drops a new one.
   let lastDrop = null;
-  function pinModeClick(e, bodyId) {
+  function pinModeClick(e, bodyId, head) {
     const x = e.clientX, y = e.clientY, now = performance.now();
     if (e.detail > 1) { if (lastDrop) lastDrop.t = now; return; }
     if (lastDrop && now - lastDrop.t < 500) {
       const dist = Math.hypot(x - lastDrop.x, y - lastDrop.y);
       if (dist <= 3 || e.detail > 1 || (dist < 8 && (describeAt(x, y) || {}).name === lastDrop.name)) { lastDrop.t = now; return; }
     }
-    const tg = pinTarget(x, y, bodyId);
+    const tg = pinTarget(x, y, bodyId, head);
     if (!tg) return;
     if (tg.open) { lastDrop = null; openCard(tg.open); armPinTimeout(); return; }
     lastDrop = { t: now, x, y, name: tg.d.name };
@@ -2942,7 +3098,8 @@ var earcut = (function () {
   /* pin elements (DOM: crisp at any DPR, hit-testable, positioned with transforms in the same frame as the map) */
   const PIN_HTML = '<svg viewBox="-12 -30 24 33" aria-hidden="true"><circle class="rp" cx="0" cy="0" r="21"/>' +
     '<ellipse class="ps" cx="0" cy="0.5" rx="4.5" ry="1.8"/><circle class="pg" cx="0" cy="-17" r="11.5"/>' +
-    '<path class="pd" d="M0 0L6.08 -14.44A6.6 6.6 0 1 0 -6.08 -14.44Z"/><circle class="pc" cx="0" cy="-17" r="2.4"/></svg><span class="ph"></span><span class="pb"></span>';
+    '<path class="pd" d="M0 0L6.08 -14.44A6.6 6.6 0 1 0 -6.08 -14.44Z"/><circle class="pc" cx="0" cy="-17" r="2.4"/>' +
+    '<path class="pvo" d="M-3.4 4.4L0 7.8L3.4 4.4"/><path class="pv" d="M-3.4 4.4L0 7.8L3.4 4.4"/></svg><span class="ph"></span><span class="pb"></span>';
   const pinEls = new Map();
   function syncPinEls() {
     const keep = new Set(pins.map((p) => p.id));
@@ -2968,9 +3125,10 @@ var earcut = (function () {
     for (const ch of pinsLayer.children) { if (ch._h) continue; if (list[i] && list[i][1] !== ch) { inOrder = false; break; } i++; }
     if (!inOrder) for (const [, el] of list) pinsLayer.appendChild(el);
   }
-  // The whole teardrop is clickable: the head (.ph) always opens the pin's card. In pin mode a click on the body
-  // (.pb) is treated like a map click at that point (pinModeClick), which opens this pin when the click would get its
-  // name and otherwise drops the nearby place, so dense places stay droppable at the whole-world view.
+  // The whole teardrop is clickable: the head (.ph) opens the pin's card. In pin mode a click on the body (.pb), or on
+  // the head while no card is open, is treated like a map click at that point (pinModeClick), which opens this pin
+  // unless the click is right on another notable place, which is then dropped: dense places stay droppable at the
+  // whole-world view.
   pinsLayer.addEventListener('click', (e) => {
     const el = e.target.closest('.pin');
     if (!el) return;
@@ -2982,6 +3140,7 @@ var earcut = (function () {
       pinModeClick(e, el.dataset.id);
       return;
     }
+    if (pinMode && !selectedId && e.target.classList.contains('ph')) { pinModeClick(e, el.dataset.id, true); return; }
     lastDrop = null;
     openCard(el.dataset.id);
     armPinTimeout();
@@ -3000,8 +3159,9 @@ var earcut = (function () {
         if (el._t !== t) { el.style.transform = t; el._t = t; el._y = y; }
         if (el._h) { el.style.display = ''; el._h = false; }
       } else if (!el._h) { el.style.display = 'none'; el._h = true; }
-      const sel = p.id === selectedId;
+      const sel = p.id === selectedId, below = on && pinBelow(p);
       if (el._sel !== sel) { el.classList.toggle('sel', sel); el._sel = sel; }
+      if (el._below !== below) { el.classList.toggle('below', below); el._below = below; }
     }
     if (selectedId) placeCard();
   }
@@ -3182,7 +3342,7 @@ var earcut = (function () {
       const [x, y] = pinXY(p);
       if (x < -10 || x > Wc + 10 || y < 0 || y > Hc + 20 || !inWorld(x, y)) continue;
       pl.push([x, y, p]);
-      boxes.push([x - 7.5, y - PIN_HEAD - 8, x + 7.5, y + 3]);
+      boxes.push([x - 7.5, y - PIN_HEAD - 8, x + 7.5, y + (pinBelow(p) ? 9 : 3)]);
     }
     const pinNames = [];
     const PF = '600 12.5px ' + LFONT;
@@ -3288,7 +3448,9 @@ var earcut = (function () {
     }
 
     // 3) cities by importance, once zoomed in; a pinned place shows its pin name instead. The name goes right of the
-    //    dot, else left, else above or below it, and never across a border onto another country.
+    //    dot, else left, else above or below it, preferably not across a border onto another country; when every side
+    //    crosses one (Geneva, Basel), the side crossing least is used, as long as it collides with nothing. Places come
+    //    most important first, so a major border city is labelled before the small towns around it.
     const P = W.places;
     if (P && view.z >= 1.9) {
       const maxN = Math.round(clamp(Wc * Hc / 40000, 12, 52));
@@ -3301,28 +3463,32 @@ var earcut = (function () {
         if (pinNames.some((q) => q[0] === lc && Math.abs(q[1] - x) + Math.abs(q[2] - y) < 90)) continue;
         const cap = P.cls[i] === CAPITAL;
         const w = textW(name, (cap ? '600' : '400') + ' 12.5px ' + LFONT, 0.125);
-        if (hit([x - 3.5, y - 3.5, x + 3.5, y + 3.5])) continue;
+        if (hit([x - 3.5, y - 3.5, x + 3.5, y + 3.5])) { if (DBG) DBG.push([name, 'dot covered']); continue; }
         const own = P.country[i], dh = cap ? 3.4 : 2;
-        const foreign = (x0, x1, yl) => {
-          if (own < 0) return false;
+        const foreign = (x0, x1, yl) => {          // how many of 5 samples along the text lie on another country
+          if (own < 0) return 0;
+          let n = 0;
           for (let k = 0; k < 5; k++) {
             const q = cssToWorld(x0 + (x1 - x0) * (k + 0.5) / 5, yl);
             if (q.y < 0 || q.y > 1) continue;
             const cc = W.countryAt(normLon(lonOfX(q.x)), latOfY(q.y), LS);
-            if (cc >= 0 && cc !== own) return true;
+            if (cc >= 0 && cc !== own) n++;
           }
-          return false;
+          return n;
         };
-        let side = null, b = null;
+        let side = null, b = null, alt = null;
         for (const [sd, bb, tl] of [
           ['r', [x - 3, y - 8, x + 3 + 5 + w + 1, y + 8], [x + 8, x + 8 + w, y]],
           ['l', [x - 3 - 5 - w - 1, y - 8, x + 3, y + 8], [x - 8 - w, x - 8, y]],
           ['a', [x - w / 2 - 1, y - 18 - dh, x + w / 2 + 1, y + dh + 1], [x - w / 2, x + w / 2, y - 9 - dh]],
           ['b', [x - w / 2 - 1, y - dh - 1, x + w / 2 + 1, y + 18 + dh], [x - w / 2, x + w / 2, y + 9 + dh]]]) {
-          if (!onScr(bb) || hit(bb) || foreign(tl[0], tl[1], tl[2])) continue;
+          if (!onScr(bb) || hit(bb)) continue;
+          const fn = foreign(tl[0], tl[1], tl[2]);
+          if (fn) { if (!alt || fn < alt[2]) alt = [sd, bb, fn]; continue; }
           side = sd; b = bb; break;
         }
-        if (!side) continue;
+        if (!side && alt) { side = alt[0]; b = alt[1]; }
+        if (!side) { if (DBG) DBG.push([name, 'no side']); continue; }
         boxes.push(b);
         const el = poolEl('lbl', n.lbl++);
         const cls = 'lbl' + (cap ? ' cap' : '') + (side === 'r' ? '' : ' ' + side);
@@ -3476,31 +3642,45 @@ var earcut = (function () {
   }
   let toastTimer = 0;
   // The pin-mode banner and the toasts sit at the top, centred on the screen when that keeps them clear of the clock;
-  // otherwise moved left within the free width beside the HUD (and clear of the desktop icons); on a screen too narrow
-  // for that (portrait at 150 %) they go below the HUD instead. Never wrapped into the clock.
-  let bannerTop = 22;
-  function topSpot(el, top0) {
+  // otherwise moved left within the free width beside the HUD (and clear of the desktop icons). On a screen too narrow
+  // for that (portrait at 150 %) they go into the empty strip below the world, just above the stats line and the
+  // toolbar (a toast in pin mode above the banner, or, with no room for both, shortened at the top beside the HUD), so
+  // they cover neither the clock nor the Arctic at the top of the world band. Only when the world fills the whole band (no such strip) do they go just below the HUD. Never wrapped
+  // into the clock.
+  let bannerTop = 22, bannerLow = false;
+  function topSpot(el, top0, stack) {
     const Wc = size.cssW, m = layout.m || 16, hud = rects.hud;
     el.style.removeProperty('--maxw'); el.classList.remove('wrap');
-    const w = el.offsetWidth;
+    let w = el.offsetWidth;
     const L = Math.max(m, (CONFIG.iconColumnPx || 0) + 8), R = (hud.width ? Math.min(layout.hudL, hud.left) : Wc) - 12;
-    let cx = Wc / 2, top = top0;
+    let cx = Wc / 2, top = top0, low = false;
     if (cx + w / 2 > R) {
       if (w <= R - L) cx = R - w / 2;
       else {
-        top = Math.max(top0, (hud.width ? hud.bottom : 0) + 12 + (top0 - 22));
+        low = true;
         cx = clamp(Wc / 2, m + w / 2, Wc - m - w / 2);
         if (w > Wc - 2 * m) { el.style.setProperty('--maxw', (Wc - 2 * m) + 'px'); el.classList.add('wrap'); cx = Wc / 2; }
+        const ui = rects.ui, base = (ui.width ? ui.top : size.cssH - (CONFIG.taskbarPx || 0)) - 12, h = el.offsetHeight;
+        const worldBottom = layout.ay + (Math.min(1, layout.cropY) - layout.cyHome) * layout.s0 + PIN_DOWN_BELOW;
+        const bottom = stack != null ? stack - 8 : base;
+        if (bottom - h >= worldBottom + 8) top = bottom - h;
+        else if (stack != null && R - L >= 150) {   // no room above the banner: the toast goes to the top beside the HUD, shortened
+          el.style.setProperty('--maxw', Math.floor(R - L) + 'px');
+          w = Math.min(w, Math.floor(R - L)); cx = R - w / 2; top = top0; low = false;
+        }
+        else if (stack != null) top = stack + Math.max(0, (bannerEl.offsetHeight - h) / 2);   // or over the banner, for its 2.6 s
+        else { low = false; top = Math.max(top0, (hud.width ? hud.bottom : 0) + 12 + (top0 - 22)); }
       }
     }
     el.style.setProperty('--cx', Math.round(cx) + 'px');
     el.style.setProperty('--top', Math.round(top) + 'px');
-    return top;
+    return { top, low };
   }
-  function placeBanner() { bannerTop = topSpot(bannerEl, 22); }
+  function placeBanner() { const r = topSpot(bannerEl, 22); bannerTop = r.top; bannerLow = r.low; }
   function toast(html) {
     toastEl.innerHTML = html;
-    topSpot(toastEl, pinMode ? Math.max(74, bannerTop + 52) : 22);
+    if (pinMode) placeBanner();
+    topSpot(toastEl, pinMode && !bannerLow ? Math.max(74, bannerTop + 52) : 22, pinMode && bannerLow ? bannerTop : null);
     toastEl.classList.add('on');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toastEl.classList.remove('on'), 2600);
@@ -3567,15 +3747,16 @@ var earcut = (function () {
   }
 
   /* ---------- hover (mouse movement is forwarded by Lively) ---------- */
-  // mouse.pin: the pin element under the cursor (its tooltip stays up while the cursor is on it); mouse.body: on its body
-  const mouse = { x: -1, y: -1, onMap: false, pin: null, body: false };
+  // mouse.pin: the pin element under the cursor (its tooltip stays up while the cursor is on it); mouse.body / head: on
+  // its body / head
+  const mouse = { x: -1, y: -1, onMap: false, pin: null, body: false, head: false };
   const dropTip = (d) => '<span class="plus">+</span>' + esc(d.name) + '<small>click to drop a pin here</small>';
   function pinTip() {
     const el = mouse.pin, p = el && pins.find((q) => q.id === el.dataset.id);
     if (!p || el._h) { mouse.pin = null; hideTip(); return; }
     setHover(-1);
-    // in pin mode the body of a pin shows what a click there does: open this pin, or drop the nearby place
-    const tg = pinMode && mouse.body ? pinTarget(mouse.x, mouse.y, p.id) : null;
+    // in pin mode the body (or head) of a pin shows what a click there does: open this pin, or drop the nearby place
+    const tg = pinMode && (mouse.body || (mouse.head && !selectedId)) ? pinTarget(mouse.x, mouse.y, p.id, !mouse.body) : null;
     if (tg && !tg.open) { showTip(dropTip(tg.d)); return; }
     showTip(esc(p.name) + '<small>' + (p.added ? 'Added ' + esc(fmtDate(p.added)) + ' \u00b7 ' : '') + 'click for details</small>');
   }
@@ -3628,7 +3809,7 @@ var earcut = (function () {
     if (!(CONFIG.hoverHideSec > 0)) return;
     hoverTimer = setTimeout(() => {
       hoverTimer = 0;
-      mouse.onMap = false; mouse.pin = null; mouse.body = false;
+      mouse.onMap = false; mouse.pin = null; mouse.body = mouse.head = false;
       mouse.x = mouse.y = -1e4;                          // the cursor has left: the toolbar dims back as well
       setHover(-1, true);
       hideTip();
@@ -3661,7 +3842,7 @@ var earcut = (function () {
     mouse.onMap = onMap;
     lastMoveT = performance.now();
     const pinEl = !onMap && e.target.closest ? e.target.closest('.pin') : null;
-    mouse.pin = pinEl; mouse.body = !!pinEl && e.target.classList.contains('pb');
+    mouse.pin = pinEl; mouse.body = !!pinEl && e.target.classList.contains('pb'); mouse.head = !!pinEl && e.target.classList.contains('ph');
     if (drag && (e.buttons & 1)) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 6) {
@@ -3821,9 +4002,10 @@ var earcut = (function () {
     if (xPanel.hidden) return;
     const Wc = size.cssW, Hc = size.cssH, m = 16, ui = rects.ui, hud = rects.hud;
     const L = Math.max(m, (CONFIG.iconColumnPx || 0) + 8), R = Wc - m;
-    const w = Math.max(200, Math.min(620, R - L));
-    let left = clamp(Wc / 2 - w / 2, L, Math.max(L, R - w));
+    let w = Math.max(200, Math.min(620, R - L));
     const R2 = hud.width ? layout.hudL - 8 : R;
+    if (R2 - L < w && R2 - L >= 400) w = Math.floor(R2 - L);    // a narrower panel in the free slot beside the HUD (its text wraps more, its box shrinks)
+    let left = clamp(Wc / 2 - w / 2, L, Math.max(L, R - w));
     if (R2 - L >= w) left = Math.min(left, R2 - w);
     const overUi = ui.width > 0 && left + w > ui.left - 8;
     const B = Math.min(Hc - (CONFIG.taskbarPx || 0) - 8, overUi ? ui.top - 8 : Hc);
@@ -3967,9 +4149,10 @@ var earcut = (function () {
   /* ---------- go ---------- */
   loadPins();
   refreshVisited();
-  updateCrop();
-  syncPinEls();
   updateStats();
+  computeLayout();             // the home fit includes the pins
+  view = homeView();
+  syncPinEls();
   bUndo.disabled = true;
   zoomButtons();
   updateDim();
