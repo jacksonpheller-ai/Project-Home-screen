@@ -41,7 +41,7 @@ Pins are saved in the wallpaper's browser storage. Whether that storage survives
 1. Click **Export**, then **Copy**. If copying is blocked, right-click the selected text and choose Copy.
 2. Send the text to whoever maintains this file. They paste the lines between the `[ ]` of `window.MY_PINS` near the top of `index.html`. Pins listed there are always shown, even if browser storage is wiped.
 
-If the stats line says **Not saved – use Export**, browser storage is not available, and Export is the only way to keep your pins.
+If the stats line says **Not saved - use Export**, browser storage is not available, and Export is the only way to keep your pins.
 
 ## Settings
 
@@ -55,8 +55,13 @@ Edit the `CONFIG` block near the top of the main `<script>` in `index.html`:
 | `showNight` | true | Day/night shading, updated once a minute |
 | `ignoreClicksAtWorldView` | true | Ordinary clicks do nothing at the whole-world view |
 | `doubleClickZoom` | false | Zoom in on a quick double click |
+| `maxZoom` | 128 | Deepest zoom, in 2x steps from the world view |
+| `pinModeTimeoutSec` | 120 | Pin mode turns itself off after this long without a drop (0 = never) |
+| `iconColumnPx` | 96 | Space kept clear on the left for desktop icons (0 = off) |
+| `coastGlow` | true | Very faint glow along coastlines |
+| `dimControls` | true | Toolbar fades back when the cursor is away from it |
 
-Add `?renderer=2d` to the file's address to force the simpler non-WebGL renderer.
+When the file is opened in a normal browser, the scroll wheel and dragging also work, and adding `?renderer=2d` to the address forces the simpler non-WebGL renderer.
 
 ## Battery
 
