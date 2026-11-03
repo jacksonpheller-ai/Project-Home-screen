@@ -32,6 +32,7 @@ The toolbar is in the bottom right:
 - Hover over a country to see its name.
 - Click a pin to see its name and the date you added it, zoom to it, or remove it.
 - Pins are named automatically from the nearest city, for example "Paris, France". Zoom in before dropping a pin if you want an exact spot.
+- A ledger below the whole-world map counts the cities, countries and continents you have pinned (it hides while you are zoomed in).
 - Countries with a pin get a red-ochre wash, and the line above the toolbar counts your places and countries.
 
 ## Keeping your pins safe
@@ -53,6 +54,7 @@ Edit the `CONFIG` block near the top of the main `<script>` in `index.html`:
 | `showSeconds` | false | Show seconds |
 | `weekStartsMonday` | true | Calendar week start |
 | `showNight` | true | Day/night shading, updated once a minute |
+| `showLedger` | true | Travel ledger (cities, countries, continents) below the whole-world map |
 | `ignoreClicksAtWorldView` | true | Ordinary clicks do nothing at the whole-world view |
 | `doubleClickZoom` | false | Zoom in on a quick double click |
 | `maxZoom` | 128 | Upper limit for zooming in, in 2x steps from the world view |

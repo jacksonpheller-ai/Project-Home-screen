@@ -250,6 +250,32 @@
     transition: opacity 0.3s;
   }
   body.dim #dock { opacity: 0.5; }
+  /* Travel ledger: below the whole-world map, display only (clicks pass through to the map). It shows only at the
+     whole-world view and fades out while zoomed in, where the map fills that space. */
+  #ledger {
+    position: fixed; left: 0; bottom: 72px; z-index: 3;
+    display: flex; align-items: center; gap: 18px;
+    padding: 7px 18px; box-sizing: border-box;
+    background: rgba(243, 233, 208, 0.9);
+    border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 3px 10px rgba(60, 40, 15, 0.18);
+    font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+    color: var(--text);
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity 0.35s ease, visibility 0s;
+  }
+  #ledger.off { opacity: 0; visibility: hidden; transition: opacity 0.25s ease, visibility 0s 0.25s; }
+  #ledger.nofit { display: none; }
+  #ledger .st { display: flex; flex-direction: column; align-items: center; line-height: 1.05; }
+  #ledger .st b { font-size: 21px; font-weight: 600; color: #7a1f14; font-variant-numeric: lining-nums tabular-nums; }
+  #ledger .st b small { font-size: 12px; font-weight: 400; color: rgba(84, 56, 30, 0.7); }
+  #ledger .st span { font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(84, 56, 30, 0.75); margin-top: 3px; }
+  #ledger .rule { width: 1px; height: 30px; background: rgba(107, 74, 42, 0.3); }
+  #ledger .conts { display: grid; grid-template-columns: repeat(4, auto); gap: 2px 12px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+  #ledger .conts i { font-style: normal; color: rgba(84, 56, 30, 0.36); }
+  #ledger .conts i.on { color: #7a1f14; font-weight: 600; }
+  #ledger.compact .conts, #ledger.compact .rule.r3 { display: none; }
   .sep { width: 1px; height: 17px; background: rgba(107, 74, 42, 0.35); margin: 0 3px; }
   .btn {
     position: relative;
@@ -472,6 +498,7 @@
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="tip"></div>
 
+<div id="ledger" aria-hidden="true"></div>
 <div id="ui">
   <div id="stats"></div>
   <div id="dock" role="toolbar" aria-label="Map controls">
@@ -542,6 +569,7 @@ const CONFIG = {
   showSeconds: false,
   weekStartsMonday: true,
   showNight: true,         // soft day/night shading for the current time (refreshed once a minute)
+  showLedger: true,        // travel ledger below the whole-world map: cities, countries and continents visited
   homeLon: 11,             // centre longitude of the world view (11 puts the seam in the Bering Strait)
   homeTopLat: 80,          // latitude band the world view tries to show (polar latitudes are cropped to fit)
   homeBottomLat: -57,
@@ -568,6 +596,7 @@ const CONFIG = {
   if (q.has('sec')) CONFIG.showSeconds = q.get('sec') === '1';
   if (q.has('mon')) CONFIG.weekStartsMonday = q.get('mon') === '1';
   if (q.has('night')) CONFIG.showNight = q.get('night') === '1';
+  if (q.has('ledger')) CONFIG.showLedger = q.get('ledger') === '1';
   bool('ignoreclicks', 'ignoreClicksAtWorldView'); bool('dblzoom', 'doubleClickZoom'); bool('glow', 'coastGlow');
 })();
 
@@ -1373,6 +1402,7 @@ var earcut = (function () {
   /* ---------- DOM ---------- */
   const $id = (id) => document.getElementById(id);
   const glCanvas = $id('map'), c2dCanvas = $id('map2d'), pinsLayer = $id('pins'), tip = $id('tip'), hudEl = $id('hud');
+  const ledgerEl = $id('ledger');
   const bPin = $id('bPin'), bPinText = $id('bPinText'), bUndo = $id('bUndo'), bIn = $id('bIn'), bOut = $id('bOut'), bHome = $id('bHome'), bExport = $id('bExport');
   const bDone = $id('bDone'), statsEl = $id('stats'), toastEl = $id('toast'), dockEl = $id('dock'), bannerEl = $id('banner');
   const card = $id('card'), cName = $id('cName'), cMeta = $id('cMeta'), cZoom = $id('cZoom'), cRemove = $id('cRemove'), cClose = $id('cClose');
@@ -1519,6 +1549,7 @@ var earcut = (function () {
     // constraints [world y, css px the content reaches beyond it]: the top ones must stay below the useful rectangle's
     // top, the bottom ones above its bottom
     const pinTop = ext ? [[ext.t, PIN_UP]] : [], pinBot = ext ? [[ext.b, ext.foot]] : [];
+    const ledTop = ledgerTopFor(Hc);   // the travel ledger sits below the world, bottom-aligned with the toolbar
     const fit = (r, tops, bots) => {
       r.Wu = r.x1 - r.x0; r.Hu = r.y1 - r.y0; r.tops = tops; r.bots = bots;
       let s = r.Wu;
@@ -1529,13 +1560,13 @@ var earcut = (function () {
     let right = Wc;
     if (hud.width) right = Math.min(right, hudL);
     if (ui.width && !uiLow) right = Math.min(right, ui.left);
-    const side = fit({ mode: 'side', x0: xL, x1: right - m, y0: m, y1: Math.min(Hc - tb, uiLow ? ui.top : Hc) - m }, [[mT, 0]].concat(pinTop), [[mB, 0]].concat(pinBot));
+    const side = fit({ mode: 'side', x0: xL, x1: right - m, y0: m, y1: Math.min(Hc - tb, uiLow ? ui.top : Hc, ledTop) - m }, [[mT, 0]].concat(pinTop), [[mB, 0]].concat(pinBot));
     // The toolbar only occupies the bottom-right corner: when the world is wider-than-tall limited, a rectangle that
     // reaches across to the HUD column but ends above the toolbar usually holds a bigger world. Everything drawn at the
     // home view (85N down to the crop) must then fit above the toolbar, so nothing ends up behind it.
     let sideTall = { s: 0 };
     if (ui.width && !uiLow && hud.width && ui.left < hudL) {
-      sideTall = fit({ mode: 'side', x0: xL, x1: hudL - m, y0: m, y1: Math.min(Hc - tb, ui.top) - m }, [[cT, 0]].concat(pinTop), [[cB, 0]].concat(pinBot));
+      sideTall = fit({ mode: 'side', x0: xL, x1: hudL - m, y0: m, y1: Math.min(Hc - tb, ui.top, ledTop) - m }, [[cT, 0]].concat(pinTop), [[cB, 0]].concat(pinBot));
       if (sideTall.s && (cB - cT) * sideTall.s > sideTall.Hu) sideTall = { s: 0 };
     }
     const sideBest = sideTall.s > side.s ? sideTall : side;
@@ -1564,6 +1595,7 @@ var earcut = (function () {
     // landscape; in portrait the world sits above the anchor in the middle of the band below the HUD).
     const yTop = layout.ay + (cT - cy) * s0, yBot = layout.ay + (cB0 - cy) * s0;
     layout.homeMidY = (Math.max(yTop, 0) + Math.min(yBot, Hc - tb)) / 2;
+    placeLedger();
   }
   // Pins added, removed or merged from another instance can change the home fit (an Antarctic or Svalbard pin). At the
   // home view the map glides to the new fit (a smaller world zooms out smoothly; a larger one is set at once); elsewhere
@@ -1670,6 +1702,7 @@ var earcut = (function () {
     const z = targetView().z;
     bOut.disabled = z <= 1 + 1e-6;
     bIn.disabled = z >= maxZoom() - 1e-6;
+    showLedger();
   }
   function animateTo(to, opt) {
     opt = opt || {};
@@ -3641,7 +3674,53 @@ var earcut = (function () {
   cClose.addEventListener('click', once(closeCard));
 
   /* ---------- stats, toast, tooltip ---------- */
+  // Travel ledger: distinct cities (pins named after a place, not just a country or sea coordinates), countries and
+  // continents, from the pins themselves.
+  const CONTS = (W.continents || ['Africa', 'Antarctica', 'Asia', 'Europe', 'North America', 'Oceania', 'South America']);
+  function updateLedger() {
+    if (!CONFIG.showLedger) { ledgerEl.classList.add('nofit'); return; }
+    const cities = new Set(), countries = new Set(), conts = new Set();
+    for (const p of pins) {
+      const ci = p.iso ? W.byIso3.get(p.iso) : null, c = ci != null ? W.countries[ci] : null;
+      if (c) { countries.add(ci); if (c.continent) conts.add(c.continent); }
+      const sn = shortName(p);
+      if (p.name && p.name !== p.country && sn !== p.country && !/\u00b0/.test(sn)) cities.add(sn.toLowerCase() + '|' + (p.iso || ''));
+    }
+    const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    const st = (num, label) => '<div class="st"><b>' + num + '</b><span>' + label + '</span></div>';
+    const html = st(cities.size, cities.size === 1 ? 'City' : 'Cities') + '<i class="rule"></i>' +
+      st(countries.size, countries.size === 1 ? 'Country' : 'Countries') + '<i class="rule"></i>' +
+      st(conts.size + ' <small>of ' + CONTS.length + '</small>', 'Continents') + '<i class="rule r3"></i>' +
+      '<div class="conts">' + CONTS.map((k) => '<i' + (conts.has(k) ? ' class="on"' : '') + '>' + esc(k) + '</i>').join('') + '</div>';
+    if (ledgerEl._html !== html) { ledgerEl.innerHTML = html; ledgerEl._html = html; placeLedger(); }
+  }
+  // Placed under the whole-world map: between the desktop-icon column and the toolbar, centred under the world where
+  // it fits, bottom-aligned with the toolbar. Only in the landscape (side) layout; hidden where there is no room.
+  function ledgerTopFor(Hc) {
+    if (!CONFIG.showLedger || ledgerEl.classList.contains('nofit')) return Infinity;
+    return Hc - 72 - (ledgerEl.offsetHeight || 52);
+  }
+  function placeLedger() {
+    if (!CONFIG.showLedger) return;
+    ledgerEl.classList.remove('nofit', 'compact');
+    const ui = rects.ui, Wc = size.cssW;
+    const L = Math.max(layout.xL || 16, 16), R = (ui && ui.width ? ui.left : Wc) - 16;
+    if (layout.mode !== 'side' || R - L < 260) { ledgerEl.classList.add('nofit'); return; }
+    let w = ledgerEl.offsetWidth;
+    if (w > R - L) { ledgerEl.classList.add('compact'); w = ledgerEl.offsetWidth; }
+    if (w > R - L) { ledgerEl.classList.add('nofit'); return; }
+    const mid = (layout.x0 + layout.x1) / 2;
+    const x = Math.round(clamp(mid - w / 2, L, R - w));
+    ledgerEl.style.left = x + 'px';
+    showLedger();
+  }
+  function showLedger() {
+    let home = true;
+    try { home = targetView().z <= 1 + 1e-6; } catch (e) { /* first layout runs before the view exists: that is the home view */ }
+    if (ledgerEl._home !== home) { ledgerEl.classList.toggle('off', !home); ledgerEl._home = home; }
+  }
   function updateStats() {
+    updateLedger();
     const n = pins.length, c = visited.size;
     let html = n ? '<b>' + n + '</b> ' + (n === 1 ? 'place' : 'places') + ' \u00b7 <b>' + c + '</b> ' + (c === 1 ? 'country' : 'countries') : 'No places pinned yet';
     if (!storageOK) html += '<span class="warn">Not saved - use Export</span>';
