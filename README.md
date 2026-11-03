@@ -55,7 +55,8 @@ Edit the `CONFIG` block near the top of the main `<script>` in `index.html`:
 | `showNight` | true | Day/night shading, updated once a minute |
 | `ignoreClicksAtWorldView` | true | Ordinary clicks do nothing at the whole-world view |
 | `doubleClickZoom` | false | Zoom in on a quick double click |
-| `maxZoom` | 128 | Deepest zoom, in 2x steps from the world view |
+| `maxZoom` | 128 | Upper limit for zooming in, in 2x steps from the world view |
+| `maxDetailPx` | 122880 | Stops zooming before the map data turns blocky (about 88x on a 1920 px screen; 0 = no limit) |
 | `pinModeTimeoutSec` | 120 | Pin mode turns itself off after this long without a drop (0 = never) |
 | `iconColumnPx` | 96 | Space kept clear on the left for desktop icons (0 = off) |
 | `coastGlow` | true | Very faint glow along coastlines |
