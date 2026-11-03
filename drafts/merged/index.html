@@ -147,6 +147,8 @@
   }
   .lbl.cap { font-weight: 600; color: rgba(232, 238, 250, 0.84); }
   .lbl.l { flex-direction: row-reverse; }
+  .lbl.a, .lbl.b { flex-direction: column-reverse; height: auto; margin-top: 0; gap: 1px; line-height: 16px; }   /* name above / below the dot */
+  .lbl.b { flex-direction: column; }
   .lbl i { width: 4px; height: 4px; margin: 0 -0.5px; border-radius: 50%; background: rgba(214, 222, 240, 0.78); flex: none; box-shadow: 0 0 0 1px rgba(4, 8, 17, 0.6); }
   .lbl.cap i { width: 4.4px; height: 4.4px; margin: 0 -1px; background: transparent; border: 1.2px solid rgba(240, 244, 252, 0.92); box-shadow: 0 0 0 1px rgba(4, 8, 17, 0.7); }
   .plbl {           /* pin name: amber, above city labels */
@@ -295,7 +297,7 @@
   body.idle .pill.accent:hover { background: var(--accent); }
   body.idle .pill.danger:hover { background: rgba(255, 110, 90, 0.08); }
   /* "Lost at sea" (zoomed in, nothing on screen): the globe button's label stays up as a hint */
-  .btn.hint[data-tip]::after { opacity: 0.92; transform: translate(-50%, 0); border-color: rgba(255, 180, 106, 0.35); }
+  .btn.hint[data-tip]::after, .btn.hint[data-tip]:hover::after { opacity: 0.92; left: auto; right: -6px; transform: none; border-color: rgba(255, 180, 106, 0.35); }
   body:not(.idle) #ui:has(.btn.hint) #stats { opacity: 0; }
   body.idle .pin .pg { fill: rgba(255, 180, 106, 0) !important; }
   body.idle .pin.sel .pg { fill: rgba(255, 180, 106, 0.24) !important; }
@@ -308,7 +310,8 @@
   }
   body.pinmode #frame { opacity: 1; }
   #banner {
-    position: fixed; top: 22px; left: 50%; z-index: 5;
+    position: fixed; top: var(--top, 22px); left: var(--cx, 50%); z-index: 5;
+    white-space: nowrap; max-width: var(--maxw, none); box-sizing: border-box;
     display: flex; align-items: center; gap: 12px;
     padding: 5px 5px 5px 16px;
     background: rgba(8, 11, 21, 0.84);
@@ -321,7 +324,8 @@
     transition: opacity 0.2s, transform 0.2s, visibility 0s 0.2s;
   }
   body.pinmode #banner { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition: opacity 0.2s, transform 0.2s; }
-  #banner .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(255, 170, 90, 0.8); }
+  #banner.wrap { white-space: normal; }
+  #banner .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(255, 170, 90, 0.8); }
 
   .pill {
     height: 36px; min-width: 64px;
@@ -373,6 +377,12 @@
     position: fixed; left: 50%; top: 50%; z-index: 8;
     width: min(620px, calc(100vw - 48px)); box-sizing: border-box;
     transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; overflow: auto;
+  }
+  #export.placed { transform: none; }
+  #export > * { flex: none; }
+  #export > #xText { flex: 0 1 auto; min-height: 44px; }
+  #export {
     padding: 18px 18px 14px;
     background: rgba(9, 12, 23, 0.96);
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -406,8 +416,8 @@
   #export .x-foot { margin-top: 10px; font-size: 11px; color: var(--faint); letter-spacing: 0.04em; }
 
   #toast {
-    position: fixed; left: 50%; top: 22px; z-index: 6;
-    max-width: 60vw;
+    position: fixed; left: var(--cx, 50%); top: var(--top, 22px); z-index: 6;
+    max-width: var(--maxw, 60vw); box-sizing: border-box;
     padding: 9px 16px;
     background: rgba(8, 11, 21, 0.88);
     border: 1px solid rgba(255, 255, 255, 0.10);
@@ -420,7 +430,6 @@
     transition: opacity 0.2s, transform 0.2s;
   }
   #toast.on { opacity: 1; transform: translate(-50%, 0); }
-  body.pinmode #toast { top: 74px; }
   #toast b { color: var(--accent); font-weight: 600; }
 
   @media (prefers-reduced-motion: reduce) {
@@ -528,7 +537,10 @@ const CONFIG = {
   homeBottomLat: -57,
   taskbarPx: 48,           // keeps the world view (and the controls) clear of the Windows taskbar
   iconColumnPx: 96,        // keeps the world view and pin cards clear of the desktop icons on the left (0 = off)
-  maxZoom: 128,            // deepest zoom, in steps of 2x from the world view (128x is street-grid / city level)
+  maxZoom: 128,            // upper limit for zooming in, in steps of 2x from the world view
+  maxDetailPx: 122880,     // ...and the deepest view never magnifies the map data past this many css px per 360 deg of
+                           // longitude (about 330 m per px at the equator: a city and its surroundings, not streets;
+                           // 1:10m coastlines turn polygonal beyond it). About 88x on a 1920 px screen. 0 = no limit
   pinModeTimeoutSec: 120,  // pin mode switches itself off after this long without a pin drop (0 = never)
   ignoreClicksAtWorldView: true, // a stray desktop click never moves the resting wallpaper (use + to zoom in first)
   doubleClickZoom: false,  // two quick clicks on the same spot zoom in (off: an accidental double click does nothing)
@@ -540,7 +552,7 @@ const CONFIG = {
   const q = new URLSearchParams(location.search);
   const num = (k, key) => { if (q.has(k) && !isNaN(+q.get(k))) CONFIG[key] = +q.get(k); };
   const bool = (k, key) => { if (q.has(k)) CONFIG[key] = q.get(k) === '1'; };
-  num('lon', 'homeLon'); num('maxzoom', 'maxZoom'); num('taskbar', 'taskbarPx'); num('icons', 'iconColumnPx');
+  num('lon', 'homeLon'); num('maxzoom', 'maxZoom'); num('maxdetail', 'maxDetailPx'); num('taskbar', 'taskbarPx'); num('icons', 'iconColumnPx');
   if (q.has('h24')) CONFIG.use24Hour = q.get('h24') === '1';
   if (q.has('sec')) CONFIG.showSeconds = q.get('sec') === '1';
   if (q.has('mon')) CONFIG.weekStartsMonday = q.get('mon') === '1';
@@ -1301,6 +1313,18 @@ var earcut = (function () {
   const PIN_HEAD = 17;            // css px from a pin's tip (the place itself) up to the centre of its head
 
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  // A button that ignores the second click of a double click: by its click count, or (should the host not report one)
+  // a repeat within 400 ms on the same spot.
+  const once = (fn) => {
+    let last = null;
+    return (e) => {
+      const now = performance.now(), x = e ? e.clientX : 0, y = e ? e.clientY : 0;
+      if (e && e.detail > 1) return;
+      if (last && now - last.t < 400 && Math.abs(x - last.x) + Math.abs(y - last.y) < 16) { last.t = now; return; }
+      last = { t: now, x, y };
+      fn(e);
+    };
+  };
   function mercY(lat) {
     if (lat > MAXLAT) lat = MAXLAT; else if (lat < -MAXLAT) lat = -MAXLAT;
     const s = Math.sin(lat * RAD);
@@ -1350,6 +1374,7 @@ var earcut = (function () {
   const HOME_CROP_LAT = -62;       // at the whole-world view nothing south of this is drawn (no Mercator-inflated Antarctica)
   const PIN_LAT = 84;              // pins nearer the poles than this are drawn at this latitude, so they stay visible
   const NORECT = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+  let pins = [], tomb = new Map(), pinsVer = 0, clockT = 0;   // the pins (see the pins section)
   const rects = { hud: NORECT, dock: NORECT, stats: NORECT, ui: NORECT };
   function rectOf(el) {
     if (!el) return NORECT;
@@ -1419,6 +1444,9 @@ var earcut = (function () {
   // toolbar (landscape), or across the full width between the HUD and the toolbar (portrait). 360 degrees of longitude
   // fill the useful width; the latitude band 80N..57S is kept inside it when it fits, otherwise the poles are cropped but
   // 72N..47S always stays. Spare height is shared out around the visible content (85N down to HOME_CROP_LAT).
+  // The band below the HUD spans the HUD's columns, so it is only used when everything drawn at the home view (85N down
+  // to the crop) fits inside it: on 4:3 and 5:4 screens the band would have to crop the Arctic, which then reached up
+  // under the calendar, so those screens use the side layout.
   function computeLayout() {
     readRects();
     const Wc = size.cssW, Hc = size.cssH, hud = rects.hud, ui = rects.ui;
@@ -1426,15 +1454,15 @@ var earcut = (function () {
     const tb = CONFIG.taskbarPx || 0, xL = Math.max(m, CONFIG.iconColumnPx || 0);
     const pT = mercY(CONFIG.homeTopLat), pB = mercY(CONFIG.homeBottomLat), mT = mercY(72), mB = mercY(-47);
     const cT = 0, cB = mercY(HOME_CROP_LAT);
-    const fit = (r) => { r.Wu = r.x1 - r.x0; r.Hu = r.y1 - r.y0; r.s = r.Wu >= 80 && r.Hu >= 60 ? Math.min(r.Wu, r.Hu / (mB - mT)) : 0; return r; };
+    const fit = (r, need) => { r.Wu = r.x1 - r.x0; r.Hu = r.y1 - r.y0; r.s = r.Wu >= 80 && r.Hu >= 60 ? Math.min(r.Wu, r.Hu / need) : 0; return r; };
     const hudL = hud.width ? Math.min(hud.left, hud.right - hudWidestWidth()) : Wc;
     let right = Wc;
     if (hud.width) right = Math.min(right, hudL);
     if (ui.width) right = Math.min(right, ui.left);
-    const side = fit({ mode: 'side', x0: xL, x1: right - m, y0: m, y1: Hc - tb - m });
-    const band = hud.width ? fit({ mode: 'band', x0: xL, x1: Wc - m, y0: hud.bottom + m, y1: Math.min(Hc - tb, ui.width ? ui.top : Hc) - m }) : { s: 0 };
+    const side = fit({ mode: 'side', x0: xL, x1: right - m, y0: m, y1: Hc - tb - m }, mB - mT);
+    const band = hud.width ? fit({ mode: 'band', x0: xL, x1: Wc - m, y0: hud.bottom + m, y1: Math.min(Hc - tb, ui.width ? ui.top : Hc) - m }, cB - cT) : { s: 0 };
     let u = band.s > side.s * 1.05 ? band : side;
-    if (!u.s) u = fit({ mode: 'full', x0: m, x1: Wc - m, y0: m, y1: Math.max(m + 120, Hc - tb - m) });   // tiny windows
+    if (!u.s) u = fit({ mode: 'full', x0: m, x1: Wc - m, y0: m, y1: Math.max(m + 120, Hc - tb - m) }, mB - mT);   // tiny windows
     const s0 = Math.max(1, u.s || u.Wu), Hu = u.Hu, ay = (u.y0 + u.y1) / 2;
     let cy;
     if ((cB - cT) * s0 <= Hu) {
@@ -1446,30 +1474,65 @@ var earcut = (function () {
     else { const h = Hu / 2 / s0; cy = clamp((cT + cB) / 2, mB - h, mT + h); }
     layout.x0 = u.x0; layout.x1 = u.x1; layout.y0 = u.y0; layout.y1 = u.y1; layout.mode = u.mode;
     layout.ax = (u.x0 + u.x1) / 2; layout.ay = (u.y0 + u.y1) / 2; layout.s0 = s0; layout.cyHome = cy;
-    layout.cropY = cB;
-    layout.cyZoom = (pT + pB) / 2;     // zooming in from the home view heads for the middle of the 80N..57S band
+    layout.cropBase = cB;
+    layout.m = m; layout.xL = xL; layout.hudL = hudL;
+    // Zooming in from the home view keeps the middle of the drawn world where it is on screen (the view centre in
+    // landscape; in portrait the world sits above the anchor in the middle of the band below the HUD).
+    const yTop = layout.ay + (cT - cy) * s0, yBot = layout.ay + (cB - cy) * s0;
+    layout.homeMidY = (Math.max(yTop, 0) + Math.min(yBot, Hc - tb)) / 2;
+    updateCrop();
+  }
+  // At the whole-world view nothing south of HOME_CROP_LAT is drawn. When a pin lies further south (Antarctica), the
+  // crop moves down just far enough to show the land under it (in the portrait band: as far as the band allows; a pin
+  // still below the crop is hidden at that view, like one beside the single world copy).
+  function updateCrop() {
+    let lo = 90;
+    for (const p of pins) if (p.lat < lo) lo = p.lat;
+    let c = layout.cropBase;
+    if (lo < HOME_CROP_LAT + 1.5) {
+      let want = mercY(Math.max(-PIN_LAT, lo) - 2.5);
+      if (layout.mode === 'band') want = Math.min(want, layout.cyHome + (layout.y1 - layout.ay) / layout.s0);
+      c = Math.max(c, Math.min(1, want));
+    }
+    layout.cropY = c;
   }
 
   /* ---------- view: centre in world units (cx unbounded while animating), zoom 1 = the whole world in the useful area ---------- */
   let view = { cx: 0.5, cy: 0.5, z: 1 };
   let anim = null;
-  const maxZoom = () => clamp(CONFIG.maxZoom || 128, 2, 512);
+  // The deepest view: CONFIG.maxZoom steps of 2x, and never more magnified than the map data supports. The finest
+  // level is Natural Earth 1:10m (80 m simplification): beyond about 123k css px per 360 degrees (about 330 m per px at
+  // the equator; the scale A/C reached at 64x on a 1920 px screen) coastlines turn into visible polygons and the view
+  // only gets emptier, so that scale is the limit (CONFIG.maxDetailPx, 0 = no limit).
+  const maxZoom = () => {
+    let z = clamp(CONFIG.maxZoom || 128, 2, 512);
+    if (CONFIG.maxDetailPx > 0) z = Math.min(z, Math.max(16, CONFIG.maxDetailPx / layout.s0));
+    return z;
+  };
   const scaleOf = (v) => layout.s0 * v.z;                       // css px per world unit
-  // Vertical limits: the screen stays inside the Mercator square (or, while the world is shorter than the screen, the
-  // world stays fully on screen). Near the whole-world view the home position is always allowed, even where it shows a
-  // little ocean beyond 85N (the space freed by not drawing Antarctica); the allowance fades out by 2x.
+  // Vertical limits: the screen stays inside the Mercator square. While the world is shorter than the screen (portrait
+  // up to 2x, 4:3 at 1x) the useful band below the HUD and above the toolbar is used instead: the world covers that band
+  // (or stays inside it when it is shorter still), so a click on a northern place at 2x in portrait brings it down to
+  // the view centre instead of being held near 30S. Near the whole-world view the home position is always allowed, even
+  // where it shows a little ocean beyond 85N (the space freed by not drawing Antarctica); the allowance fades out by 2x.
   function clampView(v) {
     const z = clamp(v.z, 1, maxZoom()), s = layout.s0 * z;
-    let lo = layout.ay / s, hi = 1 - (size.cssH - layout.ay) / s;
+    let top = 0, bot = size.cssH;
+    if (s < size.cssH) { top = layout.y0; bot = layout.y1; }
+    let lo = (layout.ay - top) / s, hi = 1 - (bot - layout.ay) / s;
     if (lo > hi) { const t = lo; lo = hi; hi = t; }
     const e = clamp(2 - z, 0, 1), hc = layout.cyHome;
     if (hc < lo) lo += (hc - lo) * e; else if (hc > hi) hi += (hc - hi) * e;
     return { cx: v.cx, cy: clamp(v.cy, lo, hi), z };
   }
-  // World y below which nothing is drawn: HOME_CROP_LAT at the whole-world view, moving off the bottom by 1.7x.
+  // World y below which nothing is drawn: HOME_CROP_LAT (or a pin's latitude) at the whole-world view, moving off the
+  // bottom by 1.7x.
   function cropWY(v) { const c = layout.cropY + (v.z - 1) * 0.6; return c >= 1 ? 1 : c; }
-  // The graticule ends at the last parallel above that crop (and at 80S once it is gone).
-  function gridLatMin(v, step) { const c = cropWY(v); return c >= 1 ? -80 : Math.max(-80, Math.ceil(latOfY(c) / step) * step); }
+  // The graticule covers everything drawn: meridians from the Mercator limit (85N) down to that crop (or 85S once it is
+  // gone), parallels up to 85 degrees and down to the last one above the crop.
+  const GRID_LAT = 85;
+  function gridLatMin(v) { const c = cropWY(v); return c >= 1 ? -MAXLAT : Math.max(-MAXLAT, latOfY(c)); }
+  const gridParMin = (latMin, step) => Math.ceil(latMin / step - 1e-9) * step;
   function homeView() { return clampView({ cx: xOfLon(normLon(CONFIG.homeLon || 0)), cy: layout.cyHome, z: 1 }); }
   computeLayout();
   view = homeView();
@@ -1553,16 +1616,33 @@ var earcut = (function () {
     const l = Math.log2(z);
     return dir > 0 ? Math.pow(2, Math.floor(l + 0.02) + 1) : Math.pow(2, Math.ceil(l - 0.02) - 1);
   }
+  // A recentring click whose target the vertical limits did not allow yet (portrait at 2x, or the far north/south): the
+  // next + heads on towards it, as long as the view has not been moved some other way since.
+  let intent = null;
+  const sameView = (a, b) => { let dx = a.cx - b.cx; dx -= Math.round(dx); return Math.abs(dx) < 1e-9 && Math.abs(a.cy - b.cy) < 1e-9 && Math.abs(a.z - b.z) < 1e-9; };
+  function noteIntent(wx, wy) {
+    const tv = targetView();
+    intent = Math.abs(tv.cy - wy) > 1e-6 ? { cx: wx, cy: wy, view: { cx: tv.cx, cy: tv.cy, z: tv.z } } : null;
+  }
   function zoomButton(dir) {
     const tv = targetView();
     const z = clamp(zoomStep(tv.z, dir), 1, maxZoom());
     if (Math.abs(z - tv.z) < 1e-9) return;
+    const it = intent && dir > 0 && sameView(intent.view, tv) ? intent : null;
+    intent = null;
     // Zooming back out to 1x returns to the exact home view, so the resting wallpaper always looks the same.
     if (z <= 1 + 1e-9) { animateTo(homeView(), { dur: 420 }); return; }
-    // From the home view (whose centre sits high, as Antarctica is not drawn) zoom towards the middle of the inhabited
-    // band instead, so places in the south need no extra pan.
-    const cy = dir > 0 && isHome() && !anim ? layout.cyZoom : tv.cy;
-    animateTo({ cx: tv.cx, cy, z }, { dur: 420 });
+    // From the home view: zoom about the middle of the drawn world, which stays where it is on screen (the brief's
+    // "zoom in centres on the current view centre"; in landscape that is the view centre itself, over northern Italy).
+    if (dir > 0 && isHome()) {
+      const sy = layout.homeMidY, w = cssToWorld(layout.ax, sy);
+      const anchor = { sx: layout.ax, sy, wx: w.x, wy: w.y };
+      const c = anchoredCentre(anchor, z);
+      animateTo({ cx: c.cx, cy: c.cy, z }, { anchor, dur: 420 });
+      return;
+    }
+    animateTo({ cx: it ? it.cx : tv.cx, cy: it ? it.cy : tv.cy, z }, { dur: 420 });
+    if (it) noteIntent(it.cx, it.cy);
   }
   function zoomAt(sx, sy, z, dur) {
     z = clamp(z, 1, maxZoom());
@@ -1727,7 +1807,7 @@ var earcut = (function () {
     `;
     // Ocean: soft vignette plus a faint graticule computed analytically (exact 1 device-px lines, no geometry).
     const BG_FS = FS_COMMON + `
-      uniform vec3 u_ocean; uniform vec3 u_edge; uniform vec4 u_grid; uniform float u_step; uniform float u_latMin;
+      uniform vec3 u_ocean; uniform vec3 u_edge; uniform vec4 u_grid; uniform float u_step; uniform float u_latMin; uniform float u_parMin;
       void main() {
         vec2 f = fragPx(); vec2 w = fragWorld();
         vec2 q = (f / u_vp - 0.5) * vec2(u_vp.x / u_vp.y, 1.0);
@@ -1735,10 +1815,10 @@ var earcut = (function () {
         float sw = u_step / 360.0;
         float dm = abs(fract(w.x / sw + 0.5) - 0.5) * sw * u_scale;
         float lat = degrees(latOf(w.y));
-        float latN = clamp(floor(lat / u_step + 0.5) * u_step, u_latMin, 80.0);
+        float latN = clamp(floor(lat / u_step + 0.5) * u_step, u_parMin, floor(85.0 / u_step + 1e-4) * u_step);
         float yN = 0.5 - log(tan(PI * 0.25 + radians(latN) * 0.5)) / (2.0 * PI);
         float dp = abs(w.y - yN) * u_scale;
-        float g = max(clamp(1.0 - dm, 0.0, 1.0) * step(lat, 80.0) * step(u_latMin, lat), clamp(1.0 - dp, 0.0, 1.0));
+        float g = max(clamp(1.0 - dm, 0.0, 1.0) * step(lat, 85.06) * step(u_latMin, lat), clamp(1.0 - dp, 0.0, 1.0));
         col = mix(col, u_grid.rgb, u_grid.a * g);
         o = vec4(col + dith(), 1.0);
       }`;
@@ -2040,7 +2120,9 @@ var earcut = (function () {
       const zl = Math.log2(v.z);
       const gstep = zl < 0.9 ? 15 : zl < 1.9 ? 10 : zl < 2.9 ? 5 : zl < 3.9 ? 2 : zl < 4.9 ? 1 : 0.5;
       gl.uniform1f(P.bg.u.u_step, gstep);
-      gl.uniform1f(P.bg.u.u_latMin, gridLatMin(v, gstep));
+      const gMin = gridLatMin(v);
+      gl.uniform1f(P.bg.u.u_latMin, gMin);
+      gl.uniform1f(P.bg.u.u_parMin, gridParMin(gMin, gstep));
       gl.bindVertexArray(emptyVao);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -2343,9 +2425,9 @@ var earcut = (function () {
       c.fillStyle = gr; c.fillRect(0, 0, Wd, Hd);
       const zl = Math.log2(v.z), step = zl < 0.9 ? 15 : zl < 1.9 ? 10 : zl < 2.9 ? 5 : zl < 3.9 ? 2 : zl < 4.9 ? 1 : 0.5;
       c.strokeStyle = css(C.grid); c.lineWidth = 1; c.beginPath();
-      const gMin = gridLatMin(v, step);
-      for (let lo = Math.floor(G.gW / step) * step; lo <= G.gE; lo += step) { const x = Math.round(X(lo, 0)) + 0.5; c.moveTo(x, Y(80)); c.lineTo(x, Y(gMin)); }
-      for (let la = Math.ceil(gMin / step) * step; la <= 80; la += step) { if (la < G.latS - step || la > G.latN + step) continue; const y = Math.round(Y(la)) + 0.5; c.moveTo(0, y); c.lineTo(Wd, y); }
+      const gMin = gridLatMin(v), pMin = gridParMin(gMin, step);
+      for (let lo = Math.floor(G.gW / step) * step; lo <= G.gE; lo += step) { const x = Math.round(X(lo, 0)) + 0.5; c.moveTo(x, Y(MAXLAT)); c.lineTo(x, Y(gMin)); }
+      for (let la = pMin; la <= GRID_LAT; la += step) { if (la < G.latS - step || la > G.latN + step) continue; const y = Math.round(Y(la)) + 0.5; c.moveTo(0, y); c.lineTo(Wd, y); }
       c.stroke();
       c.save();
       clipTo(c, G);
@@ -2367,7 +2449,7 @@ var earcut = (function () {
       if (W.lakeRings) {
         const lp = new Path2D(), LR = W.lakeRings(Math.min(L, W.lakeLevels.length - 1));
         for (const sh of shifts) for (let k = 0; k < LR.length; k++) { if (W.lakes[k].minZoom > wz + 1) continue; for (const r of LR[k]) if (vis(r, sh)) poly(G, lp, r.c, sh); }
-        c.fillStyle = css(C.lake); c.fill(lp, 'evenodd');
+        c.fillStyle = css(C.lake); c.fill(lp, 'nonzero');   // lakes overlap (Georgian Bay, North Channel and Huron): even-odd would cancel them
         c.strokeStyle = css(C.coast); c.stroke(lp);
       }
       if (W.admin1) {
@@ -2537,8 +2619,9 @@ var earcut = (function () {
     } catch (e) { /* corrupt */ }
     return null;
   }
+  // Reading does not depend on writing: storage that is full or read-only still shows (and exports) the stored pins;
+  // only a failed write marks the pins as not saved.
   function readStore() {
-    if (!storageOK) return null;
     let raw = null;
     try { raw = window.localStorage.getItem(STORE_KEY); } catch (e) { storageOK = false; return null; }
     if (!raw) return null;
@@ -2552,9 +2635,12 @@ var earcut = (function () {
   // every write first merges what is stored, and a 'storage' event merges another instance's write at once. Per pin id
   // the newest event wins (a drop or an Undo restore against a removal; a tie keeps it removed), so a removal on one
   // screen is never undone by the other and no instance's pins are lost.
-  let pins = [], tomb = new Map(), pinsVer = 0, clockT = 0;
+  // (pins, tomb, pinsVer, clockT are declared near the top: the layout's southern crop depends on the pins)
   const undoStack = [];
   const stamp = () => (clockT = Math.max(Date.now(), clockT + 1));
+  // The clock also learns every time stamp it sees (stored, merged, embedded), so a new event always wins over them:
+  // a pin stamped while the PC clock was ahead (or by another instance with a fast clock) can still be removed.
+  const seeT = (t) => { if (t > clockT && isFinite(t)) clockT = Math.min(t, Date.now() + 3.15e12); };
   function tombsOf(st) {
     const m = new Map();
     if (st && Array.isArray(st.removed)) for (const r of st.removed) {
@@ -2570,13 +2656,14 @@ var earcut = (function () {
   // Merge a stored copy into memory; returns true when the pins in memory changed.
   function mergeFrom(st) {
     if (!st) return false;
-    for (const [id, t] of tombsOf(st)) if (!(tomb.get(id) >= t)) tomb.set(id, t);
+    for (const [id, t] of tombsOf(st)) { seeT(t); if (!(tomb.get(id) >= t)) tomb.set(id, t); }
     const idx = new Map(pins.map((p, i) => [p.id, i]));
     const list = pins.slice(), added = [];
     let changed = false;
     if (Array.isArray(st.pins)) for (const raw of st.pins) {
       const p = normPin(raw);
       if (!p) continue;
+      seeT(p.t);
       const i = idx.get(p.id);
       if (i == null) { if (!added.some((q) => q.id === p.id)) added.push(p); }
       else if (p.t > list[i].t) { list[i] = p; changed = true; }
@@ -2682,9 +2769,10 @@ var earcut = (function () {
     const emb = embeddedPins();
     const st = readStore();
     tomb = tombsOf(st);
+    for (const t of tomb.values()) seeT(t);
     const byId = new Map();
-    for (const raw of emb) { const p = normPin(raw); if (p && !(byId.has(p.id) && byId.get(p.id).t >= p.t)) byId.set(p.id, p); }
-    if (st && Array.isArray(st.pins)) for (const raw of st.pins) { const p = normPin(raw); if (p && !(byId.has(p.id) && byId.get(p.id).t > p.t)) byId.set(p.id, p); }
+    for (const raw of emb) { const p = normPin(raw); if (p) seeT(p.t); if (p && !(byId.has(p.id) && byId.get(p.id).t >= p.t)) byId.set(p.id, p); }
+    if (st && Array.isArray(st.pins)) for (const raw of st.pins) { const p = normPin(raw); if (p) seeT(p.t); if (p && !(byId.has(p.id) && byId.get(p.id).t > p.t)) byId.set(p.id, p); }
     pins = Array.from(byId.values()).filter(alive);
     if (storeRecovered) writeStore();          // replace the corrupt value (a copy is in the backup key)
   }
@@ -2705,6 +2793,7 @@ var earcut = (function () {
     pinsVer++;
     pruneUndo();
     refreshVisited();
+    updateCrop();
     syncPinEls();
     updateStats();
     bUndo.disabled = undoStack.length === 0;
@@ -2773,10 +2862,17 @@ var earcut = (function () {
         }
         if (best >= 0 && best !== g.place && P.country[best] >= 0) {
           const C = W.countries[P.country[best]];
-          g = { label: P.name[best] + ', ' + C.name, country: C.name, iso3: C.iso3 };
+          g = { label: P.name[best] + ', ' + C.name, country: C.name, iso3: C.iso3, place: best };
         }
       }
       d = { lon, lat, name: tidyName(g.label, g.country), country: g.country, iso: g.iso3 };
+      // Zoomed out, a click cannot land closer than a few px to the place it is meant for: a pin named after a place
+      // within that distance is put on the place itself, so 'Paris' sits on Paris when zoomed right in later. Zoomed in
+      // (under 1 km per px) the click is precise and is kept as it is.
+      if (P && g.place >= 0 && r.kmPerPx >= 1) {
+        const i = g.place, dk = W.distanceKm(lon, lat, P.lon[i], P.lat[i]);
+        if (dk <= 3 * r.kmPerPx) { d.lon = round4(normLon(P.lon[i])); d.lat = round4(P.lat[i]); d.snapped = true; }
+      }
     }
     descCache = { key, d };
     return d;
@@ -2823,6 +2919,7 @@ var earcut = (function () {
   let lastDrop = null;
   function pinModeClick(e, bodyId) {
     const x = e.clientX, y = e.clientY, now = performance.now();
+    if (e.detail > 1) { if (lastDrop) lastDrop.t = now; return; }
     if (lastDrop && now - lastDrop.t < 500) {
       const dist = Math.hypot(x - lastDrop.x, y - lastDrop.y);
       if (dist <= 3 || e.detail > 1 || (dist < 8 && (describeAt(x, y) || {}).name === lastDrop.name)) { lastDrop.t = now; return; }
@@ -2878,6 +2975,7 @@ var earcut = (function () {
     const el = e.target.closest('.pin');
     if (!el) return;
     e.stopPropagation();
+    if (e.detail > 1 || afterUiClick(e)) return;   // the 2nd click of a double click
     if (!xPanel.hidden) closeExport();
     if (pinMode && e.target.classList.contains('pb')) {
       if (selectedId && selectedId !== el.dataset.id) { closeCard(); return; }
@@ -2896,7 +2994,7 @@ var earcut = (function () {
       const el = pinEls.get(p.id);
       if (!el) continue;
       const [x, y] = pinXY(p);
-      const on = x > -20 && y > -10 && x < size.cssW + 20 && y < size.cssH + 40 && inWorldX(x);
+      const on = x > -20 && y > -10 && x < size.cssW + 20 && y < size.cssH + 40 && inWorld(x, y);   // not beside the world copy or below its crop
       if (on) {
         const t = 'translate(' + snap(x) + 'px,' + snap(y) + 'px)';
         if (el._t !== t) { el.style.transform = t; el._t = t; el._y = y; }
@@ -2914,7 +3012,7 @@ var earcut = (function () {
   // DOM text with a crisp 3 px outside stroke (paint-order) instead of a blurred shadow, so coastlines stay visible.
   const labelsEl = $id('labels');
   const pools = { cl: [], lbl: [], plbl: [] };
-  let labelKey = '', labelsHidden = false, mainSize = null;
+  let labelKey = '', labelsHidden = false, mainSize = null, insular = null, tall = null;
   const LFONT = '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif';
   const CAPITAL = W.places ? W.places.classes.indexOf('Admin-0 capital') : -1;
   const mctx = document.createElement('canvas').getContext('2d');
@@ -2932,12 +3030,20 @@ var earcut = (function () {
   function countrySizes() {
     // Size of each country's main landmass in world units: min(width, 2 x height) of its biggest ring (B's measure).
     const R = W.countryRings(0);
-    mainSize = new Float32Array(NC);
+    mainSize = new Float32Array(NC); tall = new Float32Array(NC);
     for (let ci = 0; ci < NC; ci++) {
-      let m = 0;
-      for (const r of R[ci]) { if (r.hole) continue; m = Math.max(m, Math.min((r.e - r.w) / 360, 2 * (mercY(r.s) - mercY(r.n)))); }
+      let m = 0, big = -1;
+      for (const r of R[ci]) {
+        if (r.hole || r.e - r.w > 180) continue;
+        const wd = (r.e - r.w) / 360, ht = mercY(r.s) - mercY(r.n);
+        m = Math.max(m, Math.min(wd, 2 * ht));
+        if (wd * ht > big) { big = wd * ht; tall[ci] = ht / Math.max(wd, 1e-6); }   // height / width of the largest ring
+      }
       mainSize[ci] = m;
     }
+    // countries without a land border (island nations): a label too wide for the island goes beside it
+    insular = new Uint8Array(NC).fill(1);
+    for (const a of W.countryArcs(0)) if (a.kind === 1) { if (a.a >= 0) insular[a.a] = 0; if (a.b >= 0) insular[a.b] = 0; }
   }
   function poolEl(kind, i) {
     const pool = pools[kind];
@@ -3008,23 +3114,56 @@ var earcut = (function () {
     }
     return false;
   }
-  // Is a country label's text box mostly on that country? 7 x 3 samples: it is placed when at least half of them are on
-  // the country, or (labels partly over the sea, as for island nations) when none is on another country and at least
-  // 30 % are on its own; so CHILE is not written over Argentina, nor HAITI across the Dominican Republic.
-  function labelFits(b, ci, L) {
+  // How much of a box is lake (drawn at this zoom)? A 12 x 4 sample grid against the lakes whose bounds meet the box.
+  function lakeShare(b, wz) {
+    if (!W.lakeRings) return 0;
+    const R = W.lakeRings(W.lakeLevels.length - 1), B = boxLL(b), near = [];
+    for (let k = 0; k < R.length; k++) {
+      if (W.lakes[k].minZoom > wz + 1) continue;
+      for (const r of R[k]) {
+        if (r.s > B[3] || r.n < B[1]) continue;
+        for (const sh of [0, 360, -360]) if (!(r.e + sh < B[0] || r.w + sh > B[2])) near.push([r, sh]);
+      }
+    }
+    if (!near.length) return 0;
+    let n = 0;
+    for (let j = 0; j < 4; j++) for (let i = 0; i < 12; i++) {
+      const w = cssToWorld(b[0] + (b[2] - b[0]) * (i + 0.5) / 12, b[1] + (b[3] - b[1]) * (j + 0.5) / 4);
+      const lon = lonOfX(w.x), lat = latOfY(w.y);
+      for (const [r, sh] of near) if (lon >= r.w + sh && lon <= r.e + sh && lat >= r.s && lat <= r.n && ringInRing(r.c, lon - sh, lat)) { n++; break; }
+    }
+    return n / 48;
+  }
+  // Where does a country label's text box lie? 7 x 3 samples: on the country (own), on another country (other), and
+  // whether the middle sample is on the country.
+  function coverOf(b, ci, L) {
     const rs = W.countryRings(L)[ci];
-    let own = 0, other = 0;
+    let own = 0, other = 0, mid = false;
     for (let j = 0; j < 3; j++) for (let i = 0; i < 7; i++) {
       const w = cssToWorld(b[0] + (b[2] - b[0]) * (i + 0.5) / 7, b[1] + (b[3] - b[1]) * (j + 0.5) / 3);
       if (w.y < 0 || w.y > 1) continue;
       const lon = normLon(lonOfX(w.x)), lat = latOfY(w.y);
-      if (inRingsLL(rs, lon, lat)) own++;
-      else if (W.countryAt(lon, lat, L) >= 0) { if (++other > 3) return false; }
+      if (inRingsLL(rs, lon, lat)) { own++; if (i === 3 && j === 1) mid = true; }
+      else if (W.countryAt(lon, lat, L) >= 0) other++;
     }
-    return own >= 11 || (other === 0 && own >= 7);
+    return { own, other, mid };
+  }
+  // Screen box of the landmass a country's label point is on (the ring containing it, else the country's largest ring).
+  function landBox(c, L) {
+    const rs = W.countryRings(L)[c.i] || [], lon = c.labelPt[0], lat = c.labelPt[1];
+    let best = null, ba = -1;
+    for (const r of rs) {
+      if (r.hole || r.e - r.w > 180) continue;
+      if (lon >= r.w && lon <= r.e && lat >= r.s && lat <= r.n && ringInRing(r.c, lon, lat)) { best = r; break; }
+      const a = (r.e - r.w) * (r.n - r.s);
+      if (a > ba) { ba = a; best = r; }
+    }
+    if (!best) return null;
+    const [x0, y0] = lonLatToCss(best.w, best.n), s = scaleOf(view);
+    return [x0, y0, x0 + (best.e - best.w) / 360 * s, y0 + (mercY(best.s) - mercY(best.n)) * s];
   }
   function updateLabels() {
-    const key = [view.cx, view.cy, view.z, size.cssW, size.cssH, size.devW, pinMode, pinsVer, layout.s0, layout.ax, layout.ay].join(',');
+    const key = [view.cx, view.cy, view.z, size.cssW, size.cssH, size.devW, pinMode, pinsVer, layout.s0, layout.ax, layout.ay, selectedId].join(',');
     if (key === labelKey) return;
     labelKey = key;
     const Wc = size.cssW, Hc = size.cssH, dpr = size.devW / size.cssW;
@@ -3041,7 +3180,7 @@ var earcut = (function () {
     const pl = [];
     for (const p of pins) {
       const [x, y] = pinXY(p);
-      if (x < -10 || x > Wc + 10 || y < 0 || y > Hc + 20 || !inWorldX(x)) continue;
+      if (x < -10 || x > Wc + 10 || y < 0 || y > Hc + 20 || !inWorld(x, y)) continue;
       pl.push([x, y, p]);
       boxes.push([x - 7.5, y - PIN_HEAD - 8, x + 7.5, y + 3]);
     }
@@ -3050,6 +3189,7 @@ var earcut = (function () {
     for (let i = pl.length - 1; i >= 0 && n.plbl < 80; i--) {
       const [x, y, p] = pl[i], t = shortName(p), w = textW(t, PF, 0.125);
       const hy = y - PIN_HEAD;
+      if (p.id === selectedId) { pinNames.push([t.toLowerCase(), x, y]); continue; }   // its open card shows the name
       let b = [x + 9, hy - 9, x + 13 + w, hy + 9], left = false;
       if (!onScr(b) || hit(b)) { b = [x - 13 - w, hy - 9, x - 9, hy + 9]; left = true; if (!onScr(b) || hit(b)) continue; }
       boxes.push(b);
@@ -3059,15 +3199,27 @@ var earcut = (function () {
       pinNames.push([t.toLowerCase(), x, y]);
     }
 
-    // 2) countries, most important first; skipped where the label would swamp a small country (no island clutter),
-    //    where the country fills the screen anyway, where the text would lie on another country or on a lake (then a
-    //    nearby position is tried). On small screens (a small whole-world view) the top-ranked few still show, smaller.
+    // 2) countries, most important first; skipped where the label would swamp a small country (no island clutter) or
+    //    where the country fills the screen anyway. Each label is placed at the best of several nearby positions:
+    //    best on the country with nothing else under it; then partly over the sea (island nations), with its middle on the
+    //    country; then a corner on a neighbour (at the label point or a line up/down); then, for a label wider than its
+    //    country, up to a third on neighbours with its middle and 40 % on the country; then a position that touches a
+    //    lake only a little. Sideways nudges always keep the middle of the text on the country. A small island
+    //    (narrower than its label) gets the label beside it, over the sea, so its coastline stays visible. The country
+    //    under the view centre is never left unlabelled when zoomed in. On small screens (a small whole-world view) the
+    //    top-ranked few still show, smaller.
     if (!mainSize) countrySizes();
     const cands = [];
-    const wzG = Math.max(wz, Math.min(wz + 0.6, 2.0)), fsAdj = clamp((wz - 2.0) * 2.5, -2, 0);
+    const wzG = Math.max(wz, 2.0), fsAdj = clamp((wz - 2.45) * 2.5, -2, 0);   // small whole-world views still get the major names
     for (const c of W.countries) if (c.labelPt && c.minLabel <= wzG - 0.1) cands.push(c);
     cands.sort((a, b) => a.labelRank - b.labelRank || a.minLabel - b.minLabel);
-    const big = Math.max(Wc, Hc), LS = Math.min(wantLevel(view), 2);
+    const big = Math.max(Wc, Hc), LS = Math.min(wantLevel(view), 2), lakes = view.z >= 4;
+    let centreCi = -1;
+    if (view.z >= 2) { const vc = cssToWorld(layout.ax, layout.ay); if (vc.y >= 0 && vc.y <= 1) centreCi = W.countryAt(normLon(lonOfX(vc.x)), latOfY(vc.y), LS); }
+    const DBG = Array.isArray(window.__lblDbg) ? window.__lblDbg : null;
+    if (DBG) DBG.length = 0;
+    const POS = [[0, 0], [0, -1.5], [0, 1.5], [0, -3], [0, 3], [0, -4.5], [0, 4.5],
+      [-0.3, 0], [0.3, 0], [-0.3, -1.5], [0.3, -1.5], [-0.3, 1.5], [0.3, 1.5], [-0.5, 0], [0.5, 0]];
     for (const c of cands) {
       const [x, y] = lonLatToCss(c.labelPt[0], c.labelPt[1]);
       if (x < 0 || x > Wc || y < 0 || y > Hc || !inWorld(x, y)) continue;
@@ -3078,17 +3230,54 @@ var earcut = (function () {
       const text = (wz < 4.6 && c.label.length <= c.name.length ? c.label : c.name).toUpperCase();
       const ls = Math.round(fs * 0.16 * 100) / 100;
       const w = textW(text, '600 ' + fs + 'px ' + LFONT, ls) - ls;
-      if (msz < Math.min(w * 0.7, 160)) continue;
-      // at the label point, else nudged up or down a line or sideways
-      let b = null, xx = x, yy = y;
-      for (const [dx, dy] of [[0, 0], [0, -1.5 * fs], [0, 1.5 * fs], [-0.3 * w, 0], [0.3 * w, 0], [0, -3 * fs], [0, 3 * fs]]) {
-        const c2 = [x + dx - w / 2 - 4, y + dy - fs * 0.72, x + dx + w / 2 + 4, y + dy + fs * 0.72];
-        if (!onScr(c2) || hit(c2) || !inWorld(x + dx, y + dy)) continue;
-        if (view.z >= 4 && overLake(c2, wz)) continue;
-        if (!labelFits([x + dx - w / 2, y + dy - fs * 0.36, x + dx + w / 2, y + dy + fs * 0.36], c.i, LS)) continue;
-        b = c2; xx = x + dx; yy = y + dy; break;
+      if (msz < Math.min(w * (rank <= 2 ? 0.55 : 0.7), 160)) { if (DBG) DBG.push([c.name, 'swamp']); continue; }
+      const geo = (cx, cy) => { const b = [cx - w / 2 - 4, cy - fs * 0.72, cx + w / 2 + 4, cy + fs * 0.72]; return onScr(b) && !hit(b) && inWorld(cx, cy) ? b : null; };
+      const tbox = (cx, cy) => [cx - w / 2, cy - fs * 0.36, cx + w / 2, cy + fs * 0.36];
+      let pick = null;
+      const lb = landBox(c, LS);
+      if (insular[c.i] && lb && lb[2] - lb[0] < w + 8 && lb[3] - lb[1] < 6 * fs) {
+        const mx = (lb[0] + lb[2]) / 2, my = (lb[1] + lb[3]) / 2, g = 3;
+        for (const [cx, cy] of [[mx, lb[3] + g + fs * 0.72], [lb[2] + g + 4 + w / 2, my], [mx, lb[1] - g - fs * 0.72], [lb[0] - g - 4 - w / 2, my]]) {
+          const b = geo(cx, cy);
+          if (!b) continue;
+          const cv = coverOf(tbox(cx, cy), c.i, LS);
+          if (cv.other || cv.own > 2 || (lakes && overLake(b, wz))) continue;
+          pick = [cx, cy, b, 'beside'];
+          break;
+        }
       }
-      if (!b) continue;
+      if (!pick) {
+        const wide = msz < w * 1.25 && tall[c.i] < 2.5, isCentre = c.i === centreCi;
+        let pI = null, pB = null, pC = null, pL = null, pZ = null;
+        const why = DBG ? [] : null;
+        for (const [ux, uy] of POS) {
+          const side = ux !== 0, cx = x + ux * w, cy = y + uy * fs, b = geo(cx, cy);
+          if (!b) continue;
+          const cv = coverOf(tbox(cx, cy), c.i, LS);
+          if (why) why.push([ux, uy, cv.own, cv.other, cv.mid ? 1 : 0].join(':'));
+          if (isCentre && !pZ && (cv.mid || cv.own >= 7)) pZ = [cx, cy, b, 'centre'];
+          let grade = 0;
+          if (cv.other === 0 && cv.own >= 11 && (!side || cv.mid)) grade = 1;
+          else if (cv.other === 0 && cv.own >= 7 && (cv.mid || tall[c.i] >= 2.5)) grade = 2;   // a thin coastal country (Chile): beside it over the sea
+          else if (!side && cv.own >= 11 && cv.other <= 3 && cv.mid) grade = 3;
+          else if (!side && wide && cv.mid && ((cv.own >= 9 && cv.other <= 6) || (!uy && cv.own >= (rank <= 2 ? 10 : 12)))) grade = 4;
+          if (!grade) continue;
+          if (lakes && overLake(b, wz)) {
+            const sh = lakeShare(b, wz);
+            if (sh <= (isCentre ? 0.14 : 0.05) && (!pL || sh < pL[4])) pL = [cx, cy, b, 'lake', sh];
+            continue;
+          }
+          if (grade === 1) { pick = [cx, cy, b, 'on']; break; }
+          if (grade === 2 && !pI) pI = [cx, cy, b, 'sea'];
+          if (grade === 3 && !pB) pB = [cx, cy, b, 'corner'];
+          if (grade === 4 && !pC) pC = [cx, cy, b, 'wide'];
+        }
+        pick = pick || pI || pB || pC || pL || pZ;
+        if (why && !pick) DBG.push([c.name, 'why', why.join(' ')]);
+      }
+      if (DBG) DBG.push([c.name, pick ? pick[3] : 'none', pick ? Math.round(pick[0] - x) : 0, pick ? Math.round(pick[1] - y) : 0]);
+      if (!pick) continue;
+      const [xx, yy, b] = pick;
       boxes.push(b);
       const el = poolEl('cl', n.cl++);
       setText(el, text);
@@ -3098,7 +3287,8 @@ var earcut = (function () {
       el.style.transform = 'translate(' + snap(xx - w / 2) + 'px,' + snap(yy - fs / 2) + 'px)';
     }
 
-    // 3) cities by importance, once zoomed in; a pinned place shows its pin name instead
+    // 3) cities by importance, once zoomed in; a pinned place shows its pin name instead. The name goes right of the
+    //    dot, else left, else above or below it, and never across a border onto another country.
     const P = W.places;
     if (P && view.z >= 1.9) {
       const maxN = Math.round(clamp(Wc * Hc / 40000, 12, 52));
@@ -3112,14 +3302,35 @@ var earcut = (function () {
         const cap = P.cls[i] === CAPITAL;
         const w = textW(name, (cap ? '600' : '400') + ' 12.5px ' + LFONT, 0.125);
         if (hit([x - 3.5, y - 3.5, x + 3.5, y + 3.5])) continue;
-        let b = [x - 3, y - 8, x + 3 + 5 + w + 1, y + 8], left = false;
-        if (!onScr(b) || hit(b)) { b = [x - 3 - 5 - w - 1, y - 8, x + 3, y + 8]; left = true; if (!onScr(b) || hit(b)) continue; }
+        const own = P.country[i], dh = cap ? 3.4 : 2;
+        const foreign = (x0, x1, yl) => {
+          if (own < 0) return false;
+          for (let k = 0; k < 5; k++) {
+            const q = cssToWorld(x0 + (x1 - x0) * (k + 0.5) / 5, yl);
+            if (q.y < 0 || q.y > 1) continue;
+            const cc = W.countryAt(normLon(lonOfX(q.x)), latOfY(q.y), LS);
+            if (cc >= 0 && cc !== own) return true;
+          }
+          return false;
+        };
+        let side = null, b = null;
+        for (const [sd, bb, tl] of [
+          ['r', [x - 3, y - 8, x + 3 + 5 + w + 1, y + 8], [x + 8, x + 8 + w, y]],
+          ['l', [x - 3 - 5 - w - 1, y - 8, x + 3, y + 8], [x - 8 - w, x - 8, y]],
+          ['a', [x - w / 2 - 1, y - 18 - dh, x + w / 2 + 1, y + dh + 1], [x - w / 2, x + w / 2, y - 9 - dh]],
+          ['b', [x - w / 2 - 1, y - dh - 1, x + w / 2 + 1, y + 18 + dh], [x - w / 2, x + w / 2, y + 9 + dh]]]) {
+          if (!onScr(bb) || hit(bb) || foreign(tl[0], tl[1], tl[2])) continue;
+          side = sd; b = bb; break;
+        }
+        if (!side) continue;
         boxes.push(b);
         const el = poolEl('lbl', n.lbl++);
-        const cls = 'lbl' + (cap ? ' cap' : '') + (left ? ' l' : '');
+        const cls = 'lbl' + (cap ? ' cap' : '') + (side === 'r' ? '' : ' ' + side);
         if (el.className !== cls) el.className = cls;
         setText(el.lastChild, name);
-        el.style.transform = 'translate(' + snap(left ? x + 3 - (11 + w) : x - 3) + 'px,' + snap(y) + 'px)';
+        const tx = side === 'r' ? x - 3 : side === 'l' ? x + 3 - (11 + w) : x - w / 2;
+        const ty = side === 'a' ? y - 17 - dh : side === 'b' ? y - dh : y;
+        el.style.transform = 'translate(' + snap(tx) + 'px,' + snap(ty) + 'px)';
       }
     }
     for (const kind in pools) for (let k = n[kind]; k < pools[kind].length; k++) if (pools[kind][k].style.display !== 'none') pools[kind][k].style.display = 'none';
@@ -3140,6 +3351,7 @@ var earcut = (function () {
       lostOn = lost;
       bHome.classList.toggle('hint', lost);
       bHome.dataset.tip = lost ? 'Open sea: click here for the whole world' : 'Whole world';
+      updateDim();
     }
   }
 
@@ -3166,6 +3378,7 @@ var earcut = (function () {
     card.hidden = false;
     hideTip();
     positionOverlays();
+    if (!anim) updateLabels();      // the card shows the pin's name: its label steps aside
     updateDim();
     armCardClose();
   }
@@ -3188,11 +3401,16 @@ var earcut = (function () {
     selectedId = null;
     card.hidden = true;
     positionOverlays();
+    if (!anim) updateLabels();
     updateDim();
   }
   const overlapArea = (x, y, w, h, r) => Math.max(0, Math.min(x + w, r.right) - Math.max(x, r.left)) * Math.max(0, Math.min(y + h, r.bottom) - Math.max(y, r.top));
+  // A card avoids the clock, the date and the calendar themselves (not the empty corner of the HUD's bounding box),
+  // the toolbar, the banner, the desktop icon column and the taskbar band.
   function cardObstacles() {
-    const out = obstacleRects().map((r) => ({ left: r.left - 8, top: r.top - 8, right: r.right + 8, bottom: r.bottom + 8 }));
+    const own = [rectOf($id('time')), rectOf($id('date')), rectOf($id('cal')), rects.ui];
+    if (pinMode) own.push(rectOf(bannerEl));
+    const out = own.filter((r) => r && r.width > 0).map((r) => ({ left: r.left - 8, top: r.top - 8, right: r.right + 8, bottom: r.bottom + 8 }));
     if (CONFIG.iconColumnPx > 0) out.push({ left: -1e4, top: -1e4, right: CONFIG.iconColumnPx, bottom: 1e5 });
     out.push({ left: -1e4, top: size.cssH - (CONFIG.taskbarPx || 0) - 8, right: 1e5, bottom: 1e5 });
     return out;
@@ -3203,16 +3421,26 @@ var earcut = (function () {
     const p = pins.find((q) => q.id === selectedId);
     if (!p) { closeCard(); return; }
     const [x, y] = pinXY(p);
-    if (x < 0 || y < 0 || x > size.cssW || y > size.cssH || !inWorldX(x)) { card.style.visibility = 'hidden'; return; }
+    if (x < 0 || y < 0 || x > size.cssW || y > size.cssH || !inWorld(x, y)) { card.style.visibility = 'hidden'; return; }
     card.style.visibility = '';
     const w = card.offsetWidth, h = card.offsetHeight, hy = y - PIN_HEAD;
     const Wc = size.cssW, Hc = size.cssH, obs = cardObstacles();
     const pinBox = { left: x - 10, top: hy - 10, right: x + 10, bottom: y + 3 };
+    // Right of the head, left of it, above or below it; each also slid along its side as far as its pointer can still
+    // reach the pin (above-left / above-right and so on), and to just clear of each obstacle. On a small or narrow screen
+    // that keeps the card off the toolbar and the desktop icon column.
     const cands = [['pr', x + 20, hy - h / 2], ['pl', x - 20 - w, hy - h / 2], ['pa', x - w / 2, hy - 18 - h], ['pb', x - w / 2, y + 14]];
+    for (const t of [hy - h + 18, hy - 18]) { cands.push(['pr', x + 20, t], ['pl', x - 20 - w, t]); }
+    for (const l of [x - 22, x + 22 - w]) { cands.push(['pa', l, hy - 18 - h], ['pb', l, y + 14]); }
+    for (const r of obs) {
+      for (const t of [r.top - h, r.bottom]) if (t > hy - h + 10 && t < hy - 10) cands.push(['pr', x + 20, t], ['pl', x - 20 - w, t]);
+      for (const l of [r.left - w, r.right]) if (l > x - w + 10 && l < x - 10) cands.push(['pa', l, hy - 18 - h], ['pb', l, y + 14]);
+    }
     let best = null, bs = Infinity;
-    for (const [side, l0, t0] of cands) {
+    for (let k = 0; k < cands.length; k++) {
+      const [side, l0, t0] = cands[k];
       const l = clamp(l0, 12, Wc - w - 12), t = clamp(t0, 12, Math.max(12, Hc - (CONFIG.taskbarPx || 0) - h - 8));
-      let sc = (Math.abs(l - l0) + Math.abs(t - t0)) * 2;
+      let sc = (Math.abs(l - l0) + Math.abs(t - t0)) * 2 + (k < 4 ? 0 : 1);
       for (const r of obs) sc += overlapArea(l, t, w, h, r);
       sc += overlapArea(l, t, w, h, pinBox) * 50;
       if (sc < bs) { bs = sc; best = [side, l, t]; if (sc === 0) break; }
@@ -3224,19 +3452,20 @@ var earcut = (function () {
     if (side === 'pr' || side === 'pl') card.style.setProperty('--ay', clamp(hy - top, 14, h - 14) + 'px');
     else card.style.setProperty('--ax', clamp(x - left, 16, w - 16) + 'px');
   }
-  cZoom.addEventListener('click', () => {
+  cZoom.addEventListener('click', once(() => {
     const p = pins.find((q) => q.id === selectedId);
     if (!p) return;
     const tv = targetView();
     const z = clamp(Math.max(8, tv.z * 4), 1, maxZoom());
+    intent = null;
     animateTo({ cx: xOfLon(normLon(p.lon)), cy: mercY(clamp(p.lat, -PIN_LAT, PIN_LAT)), z }, { dur: 450 });
-  });
-  cRemove.addEventListener('click', () => {
+  }));
+  cRemove.addEventListener('click', once(() => {
     if (!selectedId) return;
     const p = removePin(selectedId);
     if (p) toast('Removed <b>' + esc(shortName(p)) + '</b> \u00b7 Undo is in the toolbar');
-  });
-  cClose.addEventListener('click', closeCard);
+  }));
+  cClose.addEventListener('click', once(closeCard));
 
   /* ---------- stats, toast, tooltip ---------- */
   function updateStats() {
@@ -3246,8 +3475,32 @@ var earcut = (function () {
     if (statsEl._html !== html) { statsEl.innerHTML = html; statsEl._html = html; readStatsRect(); }
   }
   let toastTimer = 0;
+  // The pin-mode banner and the toasts sit at the top, centred on the screen when that keeps them clear of the clock;
+  // otherwise moved left within the free width beside the HUD (and clear of the desktop icons); on a screen too narrow
+  // for that (portrait at 150 %) they go below the HUD instead. Never wrapped into the clock.
+  let bannerTop = 22;
+  function topSpot(el, top0) {
+    const Wc = size.cssW, m = layout.m || 16, hud = rects.hud;
+    el.style.removeProperty('--maxw'); el.classList.remove('wrap');
+    const w = el.offsetWidth;
+    const L = Math.max(m, (CONFIG.iconColumnPx || 0) + 8), R = (hud.width ? Math.min(layout.hudL, hud.left) : Wc) - 12;
+    let cx = Wc / 2, top = top0;
+    if (cx + w / 2 > R) {
+      if (w <= R - L) cx = R - w / 2;
+      else {
+        top = Math.max(top0, (hud.width ? hud.bottom : 0) + 12 + (top0 - 22));
+        cx = clamp(Wc / 2, m + w / 2, Wc - m - w / 2);
+        if (w > Wc - 2 * m) { el.style.setProperty('--maxw', (Wc - 2 * m) + 'px'); el.classList.add('wrap'); cx = Wc / 2; }
+      }
+    }
+    el.style.setProperty('--cx', Math.round(cx) + 'px');
+    el.style.setProperty('--top', Math.round(top) + 'px');
+    return top;
+  }
+  function placeBanner() { bannerTop = topSpot(bannerEl, 22); }
   function toast(html) {
     toastEl.innerHTML = html;
+    topSpot(toastEl, pinMode ? Math.max(74, bannerTop + 52) : 22);
     toastEl.classList.add('on');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toastEl.classList.remove('on'), 2600);
@@ -3299,6 +3552,7 @@ var earcut = (function () {
     bPin.setAttribute('aria-pressed', String(pinMode));
     bPin.setAttribute('aria-label', pinMode ? 'Done: turn pin mode off' : 'Pin mode');
     bPinText.textContent = pinMode ? 'Done' : 'Pin';
+    if (pinMode) placeBanner();
     descCache = null;
     closeCard();
     armPinTimeout();
@@ -3391,7 +3645,7 @@ var earcut = (function () {
     if (!CONFIG.dimControls) { if (dimmed !== false) { document.body.classList.remove('dim'); dimmed = false; } return; }
     const r = rects.ui, m = 140;
     const near = r.width > 0 && mouse.x >= r.left - m && mouse.x <= r.right + m && mouse.y >= r.top - m && mouse.y <= r.bottom + m;
-    const dim = !(near || pinMode || !card.hidden || !xPanel.hidden);
+    const dim = !(near || pinMode || !card.hidden || !xPanel.hidden || (lostOn && !idleHidden));   // the lost-at-sea hint reads at full strength
     if (dim !== dimmed) { document.body.classList.toggle('dim', dim); dimmed = dim; }
   }
 
@@ -3435,17 +3689,37 @@ var earcut = (function () {
   // Drag to pan is an extra for normal browsers; in Lively a click never moves far enough to start one.
   function onDown(e) {
     if (e.button !== 0) return;
+    suppressClick = false;
     drag = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy, moved: false };
   }
   function onUp() {
-    if (drag && drag.moved) { suppressClick = true; if (!drag.locked) { normalizeView(); afterSettle(); } }
+    if (drag && drag.moved) {
+      // swallow the click that ends this drag; a drag released off the map (on the toolbar) gets no click on the map,
+      // so the flag is cleared once this mouseup's click (if any) has been dispatched
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 0);
+      if (!drag.locked) { normalizeView(); afterSettle(); }
+    }
     drag = null;
   }
   glCanvas.addEventListener('mousedown', onDown);
   c2dCanvas.addEventListener('mousedown', onDown);
   document.addEventListener('mouseup', onUp);
+  // Reflex double clicks: a double click on one of the wallpaper's own controls acts once (the buttons ignore the second
+  // click, e.detail > 1), and a map click right after a click on a control or a card (or with e.detail > 1) is ignored,
+  // so a double click on Remove or Close never drops a pin or recentres the map under the vanished card.
+  const uiClick = { t: -1e9, x: 0, y: 0 };
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.closest && t.closest('#ui, #card, #banner, #export')) { uiClick.t = performance.now(); uiClick.x = e.clientX; uiClick.y = e.clientY; }
+  }, true);
+  // the second click of a double click: within 400 ms of a click on a control and on (nearly) the same spot
+  const afterUiClick = (e) => performance.now() - uiClick.t < 400 && Math.abs(e.clientX - uiClick.x) + Math.abs(e.clientY - uiClick.y) < 16;
   function onMapClick(e) {
     if (suppressClick) { suppressClick = false; return; }
+    const now = performance.now();
+    if (afterUiClick(e)) return;
+    if (e.detail > 1 && !(CONFIG.doubleClickZoom && !pinMode)) return;
     if (!xPanel.hidden) { closeExport(); return; }
     if (selectedId) { closeCard(); return; }
     if (!inWorld(e.clientX, e.clientY)) return;      // beside the single world copy (under the HUD column at 1x) or below its crop
@@ -3457,18 +3731,22 @@ var earcut = (function () {
       if (!hintShown) { hintShown = true; toast('Use <b>+</b> to zoom in, or <b>Pin</b> to drop a pin'); }
       return;
     }
-    const now = performance.now();
-    if (CONFIG.doubleClickZoom && lastClick && now - lastClick.t < 400 && Math.abs(e.clientX - lastClick.x) + Math.abs(e.clientY - lastClick.y) < 12) {
+    const near = lastClick && now - lastClick.t < 500 && Math.abs(e.clientX - lastClick.x) + Math.abs(e.clientY - lastClick.y) < 12;
+    if (CONFIG.doubleClickZoom && near && now - lastClick.t < 400) {
       animateTo({ cx: lastClick.w.x, cy: lastClick.w.y, z: clamp(zoomStep(tv.z, 1), 1, maxZoom()) }, { dur: 440 });
-      lastClick = null;
+      lastClick = null; intent = null;
       return;
     }
+    // A second click on the same spot while the first one's glide is under way (a double click that arrived without a
+    // click count) goes to the same place: the map does not overshoot.
+    if (near) return;
     // Zoomed in: a click glides the map so that point becomes the centre (while the whole world is still narrower than
     // the screen, e.g. with ?ignoreclicks=0 at 1x, it also zooms in one step, so the single world copy is not turned).
     const w = cssToWorld(e.clientX, e.clientY);
     lastClick = { t: now, x: e.clientX, y: e.clientY, w };
     const z = scaleOf(tv) < size.cssW ? clamp(zoomStep(tv.z, 1), 1, maxZoom()) : tv.z;
     animateTo({ cx: w.x, cy: w.y, z }, { dur: 420 });
+    noteIntent(w.x, w.y);
   }
   glCanvas.addEventListener('click', onMapClick);
   c2dCanvas.addEventListener('click', onMapClick);
@@ -3482,13 +3760,14 @@ var earcut = (function () {
   glCanvas.addEventListener('wheel', onWheel, { passive: false });
   c2dCanvas.addEventListener('wheel', onWheel, { passive: false });
 
+  // + and - take every click (two quick clicks on + are two steps); the toggles and the destructive buttons act once.
   bIn.addEventListener('click', () => zoomButton(1));
   bOut.addEventListener('click', () => zoomButton(-1));
-  bHome.addEventListener('click', () => { closeCard(); goHome(); });
-  bPin.addEventListener('click', () => setPinMode(!pinMode));
-  bDone.addEventListener('click', () => setPinMode(false));
-  bUndo.addEventListener('click', undo);
-  bExport.addEventListener('click', () => (xPanel.hidden ? openExport() : closeExport()));
+  bHome.addEventListener('click', () => { closeCard(); intent = null; goHome(); });
+  bPin.addEventListener('click', once(() => setPinMode(!pinMode)));
+  bDone.addEventListener('click', once(() => setPinMode(false)));
+  bUndo.addEventListener('click', once(undo));
+  bExport.addEventListener('click', once(() => (xPanel.hidden ? openExport() : closeExport())));
 
   /* keyboard extras (Lively has keyboard input off by default; nothing depends on these) */
   document.addEventListener('keydown', (e) => {
@@ -3532,11 +3811,33 @@ var earcut = (function () {
     xWarn.textContent = w; xWarn.hidden = !w;
     xMsg.textContent = pins.length ? '' : 'No pins yet: turn on Pin mode and click the map.';
     xPanel.hidden = false;
+    placeExport();
     hideTip();
     updateDim();
   }
+  // The Export panel stays inside the free area: clear of the toolbar, the desktop icon column, the taskbar and, where
+  // the width allows, the HUD; on a short screen its text box gives way (it scrolls).
+  function placeExport() {
+    if (xPanel.hidden) return;
+    const Wc = size.cssW, Hc = size.cssH, m = 16, ui = rects.ui, hud = rects.hud;
+    const L = Math.max(m, (CONFIG.iconColumnPx || 0) + 8), R = Wc - m;
+    const w = Math.max(200, Math.min(620, R - L));
+    let left = clamp(Wc / 2 - w / 2, L, Math.max(L, R - w));
+    const R2 = hud.width ? layout.hudL - 8 : R;
+    if (R2 - L >= w) left = Math.min(left, R2 - w);
+    const overUi = ui.width > 0 && left + w > ui.left - 8;
+    const B = Math.min(Hc - (CONFIG.taskbarPx || 0) - 8, overUi ? ui.top - 8 : Hc);
+    let T = m;
+    if (hud.width && left + w > hud.left - 8 && B - (hud.bottom + 8) >= Math.min(xPanel.scrollHeight, 360)) T = hud.bottom + 8;   // narrow screens: below the HUD
+    xPanel.classList.add('placed');
+    xPanel.style.width = w + 'px';
+    xPanel.style.left = Math.round(left) + 'px';
+    xPanel.style.maxHeight = Math.max(120, B - T) + 'px';
+    const h = xPanel.offsetHeight;
+    xPanel.style.top = Math.round(clamp(Hc / 2 - h / 2, T, Math.max(T, B - h))) + 'px';
+  }
   function closeExport() { xPanel.hidden = true; updateDim(); }
-  xClose.addEventListener('click', closeExport);
+  xClose.addEventListener('click', once(closeExport));
   xText.addEventListener('click', () => { xText.focus(); xText.select(); });
   xCopy.addEventListener('click', () => {
     const text = xText.value;
@@ -3566,6 +3867,8 @@ var earcut = (function () {
   }
   function relayout(atHome) {
     computeLayout();
+    placeBanner();
+    placeExport();
     view = atHome ? homeView() : clampView(view);
     descCache = null;
     labelKey = '';
@@ -3664,6 +3967,7 @@ var earcut = (function () {
   /* ---------- go ---------- */
   loadPins();
   refreshVisited();
+  updateCrop();
   syncPinEls();
   updateStats();
   bUndo.disabled = true;
