@@ -157,7 +157,7 @@
     -webkit-text-stroke-width: 3.5px !important;
   }
 
-  /* Pins: amber teardrop, tip on the place. The hit area is a small circle on the head only. */
+  /* Pins: amber teardrop, tip on the place. The whole teardrop is clickable: a circle on the head plus the body. */
   #pins { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
   .pin { position: absolute; left: 0; top: 0; width: 0; height: 0; }
   .pin svg { position: absolute; left: -12px; top: -30px; width: 24px; height: 33px; overflow: visible; pointer-events: none; }
@@ -167,11 +167,16 @@
   .pin .pd { fill: #ffb46a; stroke: rgba(40, 20, 4, 0.85); stroke-width: 1.25px; }
   .pin.sel .pd { fill: #ffd2a6; }
   .pin .pc { fill: #2b1606; }
-  .pin .ph {           /* hit area: about 9 px around the head centre (smaller in pin mode, so nearby places stay droppable) */
+  .pin .ph {           /* head: about 9 px around the head centre (the visible head in pin mode, so nearby places stay droppable) */
     position: absolute; left: -9px; top: -26px; width: 18px; height: 18px; border-radius: 50%;
     pointer-events: auto; cursor: pointer;
   }
-  body.pinmode .pin .ph { left: -6px; top: -23px; width: 12px; height: 12px; }
+  body.pinmode .pin .ph { left: -6.5px; top: -23.5px; width: 13px; height: 13px; }
+  .pin .pb {           /* body: the triangle from the head down to the tip (and 1.5 px past it) */
+    position: absolute; left: -7px; top: -15px; width: 14px; height: 16.5px;
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
+    pointer-events: auto; cursor: pointer;
+  }
   .pin.new svg { animation: drop 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.25) both; transform-origin: 12px 30px; }
   .pin.new .rp { animation: ripple 0.7s ease-out both; }
   .pin .rp { fill: none; stroke: #ffb46a; stroke-width: 1.5px; opacity: 0; }
@@ -286,6 +291,12 @@
   body.pinmode #bPin::after { display: none; }
   /* After a few seconds without mouse movement (the cursor left the desktop) hover effects are cleared */
   body.idle .btn[data-tip]::after { opacity: 0 !important; }
+  body.idle .btn:hover, body.idle .pill:hover { background: transparent; }
+  body.idle .pill.accent:hover { background: var(--accent); }
+  body.idle .pill.danger:hover { background: rgba(255, 110, 90, 0.08); }
+  /* "Lost at sea" (zoomed in, nothing on screen): the globe button's label stays up as a hint */
+  .btn.hint[data-tip]::after { opacity: 0.92; transform: translate(-50%, 0); border-color: rgba(255, 180, 106, 0.35); }
+  body:not(.idle) #ui:has(.btn.hint) #stats { opacity: 0; }
   body.idle .pin .pg { fill: rgba(255, 180, 106, 0) !important; }
   body.idle .pin.sel .pg { fill: rgba(255, 180, 106, 0.24) !important; }
 
@@ -517,7 +528,7 @@ const CONFIG = {
   homeBottomLat: -57,
   taskbarPx: 48,           // keeps the world view (and the controls) clear of the Windows taskbar
   iconColumnPx: 96,        // keeps the world view and pin cards clear of the desktop icons on the left (0 = off)
-  maxZoom: 64,             // 64x the world view is roughly city level
+  maxZoom: 128,            // deepest zoom, in steps of 2x from the world view (128x is street-grid / city level)
   pinModeTimeoutSec: 120,  // pin mode switches itself off after this long without a pin drop (0 = never)
   ignoreClicksAtWorldView: true, // a stray desktop click never moves the resting wallpaper (use + to zoom in first)
   doubleClickZoom: false,  // two quick clicks on the same spot zoom in (off: an accidental double click does nothing)
@@ -1312,9 +1323,10 @@ var earcut = (function () {
     glow: hex('#5a8cf5', 0.10),
     hoverLine: hex('#e8f0ff', 0.9), visitedLine: hex('#ffb46a', 0.8), night: hex('#010309', 0.36)
   };
-  // Visited countries: a light amber wash (about 13 %) over the land; the amber outline does the real work.
-  C.visited = mix(C.land, hex('#ffb46a'), 0.13);
-  C.visitedHover = mix(C.landHover, hex('#ffb46a'), 0.15);
+  // Visited countries: a dark, slightly warm (amber-leaning) fill instead of the navy land, quiet enough that a screen
+  // filled by a visited country keeps the palette; the 1 device-px amber outline does the real work.
+  C.visited = hex('#322b2e');
+  C.visitedHover = hex('#3e3539');
 
   /* ---------- DOM ---------- */
   const $id = (id) => document.getElementById(id);
@@ -1333,8 +1345,10 @@ var earcut = (function () {
     size.devH = Math.max(1, Math.round(size.cssH * (devicePixelRatio || 1)));
   }
 
-  /* ---------- layout: the useful area (left of the HUD column, above the taskbar) and the screen rects to avoid ---------- */
-  const layout = { ax: 0.5, ay: 0.5, s0: 1, x0: 0, x1: 1, y0: 0, y1: 1, cyHome: 0.5 };
+  /* ---------- layout: the useful area (beside or below the HUD, above the taskbar) and the screen rects to avoid ---------- */
+  const layout = { ax: 0.5, ay: 0.5, s0: 1, x0: 0, x1: 1, y0: 0, y1: 1, cyHome: 0.5, cropY: 2, mode: 'side' };
+  const HOME_CROP_LAT = -62;       // at the whole-world view nothing south of this is drawn (no Mercator-inflated Antarctica)
+  const PIN_LAT = 84;              // pins nearer the poles than this are drawn at this latitude, so they stay visible
   const NORECT = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
   const rects = { hud: NORECT, dock: NORECT, stats: NORECT, ui: NORECT };
   function rectOf(el) {
@@ -1353,40 +1367,109 @@ var earcut = (function () {
     rects.ui = { left: Math.min(d.left, s.left), top: Math.min(d.top, s.top), right: Math.max(d.right, s.right), bottom: Math.max(d.bottom, s.bottom) };
     rects.ui.width = rects.ui.right - rects.ui.left; rects.ui.height = rects.ui.bottom - rects.ui.top;
   }
+  // The clock and the date change width over time (9:59 vs 10:00 with ?h24=0, a longer weekday or month after midnight).
+  // The HUD column is sized from its widest possible content, so the home view never rescales with the time of day.
+  // Measured once per font size with a hidden probe that copies the computed fonts (the HUD itself is not touched).
+  let hudProbe = null, hudWideKey = '', hudWideW = 0;
+  function hudWidestWidth() {
+    const hm = $id('hm'), ap = $id('ampm'), dt = $id('date');
+    if (!hm || !dt) return 0;
+    const hs = getComputedStyle(hm), as = getComputedStyle(ap || hm), ds = getComputedStyle(dt);
+    const F = (cs) => 'font-style:' + cs.fontStyle + ';font-weight:' + cs.fontWeight + ';font-size:' + cs.fontSize + ';font-family:' + cs.fontFamily + ';letter-spacing:' + cs.letterSpacing + ';font-variant-numeric:' + cs.fontVariantNumeric + ';text-transform:' + cs.textTransform + ';';
+    const key = [F(hs), F(as), F(ds), CONFIG.use24Hour, CONFIG.showSeconds].join('|');
+    if (key === hudWideKey) return hudWideW;
+    if (!hudProbe) {
+      hudProbe = document.createElement('div');
+      hudProbe.setAttribute('aria-hidden', 'true');
+      hudProbe.style.cssText = 'position:fixed;left:-20000px;top:0;visibility:hidden;pointer-events:none;white-space:nowrap;contain:layout style';
+      document.body.appendChild(hudProbe);
+    }
+    const copy = (el, cs) => { el.style.cssText = 'display:block;white-space:nowrap;' + F(cs); };
+    hudProbe.replaceChildren();
+    const sec = CONFIG.showSeconds ? ':00' : '';
+    for (const t of ['00:00', '88:88', '44:44', '12:00']) {
+      const row = document.createElement('div');
+      copy(row, hs);
+      row.textContent = t + sec;
+      if (!CONFIG.use24Hour) for (const a of ['AM', 'PM']) {
+        const s = document.createElement('span');
+        s.style.cssText = F(as) + 'margin-left:' + as.marginLeft;
+        s.textContent = a; row.appendChild(s);
+      }
+      hudProbe.appendChild(row);
+    }
+    let timeW = hudProbe.getBoundingClientRect().width;
+    if (!CONFIG.use24Hour) {   // only one of AM / PM shows at a time: subtract the narrower one
+      const s = hudProbe.querySelector('span');
+      if (s) timeW -= Math.min(s.getBoundingClientRect().width, s.nextSibling.getBoundingClientRect().width) + parseFloat(as.marginLeft || 0);
+    }
+    hudProbe.replaceChildren();
+    for (let mo = 0; mo < 12; mo++) for (let d = 22; d <= 28; d++) {   // all 7 weekdays of every month
+      const row = document.createElement('div');
+      copy(row, ds);
+      row.textContent = new Date(2026, mo, d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+      hudProbe.appendChild(row);
+    }
+    const dateW = hudProbe.getBoundingClientRect().width;
+    hudProbe.replaceChildren();
+    hudWideKey = key; hudWideW = Math.ceil(Math.max(timeW, dateW));
+    return hudWideW;
+  }
+  // The whole-world view is fitted into the larger of two useful rectangles: beside the clock/calendar column and the
+  // toolbar (landscape), or across the full width between the HUD and the toolbar (portrait). 360 degrees of longitude
+  // fill the useful width; the latitude band 80N..57S is kept inside it when it fits, otherwise the poles are cropped but
+  // 72N..47S always stays. Spare height is shared out around the visible content (85N down to HOME_CROP_LAT).
   function computeLayout() {
     readRects();
-    const Wc = size.cssW, Hc = size.cssH, hud = rects.hud, dock = rects.dock;
+    const Wc = size.cssW, Hc = size.cssH, hud = rects.hud, ui = rects.ui;
     const m = Math.max(16, Math.round(Math.min(Wc, Hc) * 0.025));
-    let x0 = Math.max(m, CONFIG.iconColumnPx || 0);
-    let right = Wc;
-    if (hud.width) right = Math.min(right, hud.left);
-    if (dock.width) right = Math.min(right, dock.left);
-    let x1 = right - m;
-    if (x1 - x0 < Wc * 0.5) { x0 = m; x1 = Wc - m; }          // narrow or portrait screens: use the full width
-    const y0 = m, y1 = Math.max(y0 + 120, Hc - (CONFIG.taskbarPx || 0) - m);
-    const Wu = Math.max(80, x1 - x0), Hu = y1 - y0;
-    // Fit 360 degrees of longitude into the useful width; show the preferred latitude band if it fits, otherwise crop
-    // the poles but always keep 72N..47S (Tromso, Reykjavik .. Queenstown, Hobart); shrink only if even that cannot fit.
+    const tb = CONFIG.taskbarPx || 0, xL = Math.max(m, CONFIG.iconColumnPx || 0);
     const pT = mercY(CONFIG.homeTopLat), pB = mercY(CONFIG.homeBottomLat), mT = mercY(72), mB = mercY(-47);
-    let s0 = Wu, cy;
-    if ((pB - pT) * s0 <= Hu) cy = (pT + pB) / 2;
-    else if ((mB - mT) * s0 <= Hu) { const h = Hu / 2 / s0; cy = clamp((pT + pB) / 2, mB - h, mT + h); }
-    else { s0 = Hu / (mB - mT); cy = (mT + mB) / 2; }
-    layout.x0 = x0; layout.x1 = x1; layout.y0 = y0; layout.y1 = y1;
-    layout.ax = (x0 + x1) / 2; layout.ay = (y0 + y1) / 2; layout.s0 = s0; layout.cyHome = cy;
+    const cT = 0, cB = mercY(HOME_CROP_LAT);
+    const fit = (r) => { r.Wu = r.x1 - r.x0; r.Hu = r.y1 - r.y0; r.s = r.Wu >= 80 && r.Hu >= 60 ? Math.min(r.Wu, r.Hu / (mB - mT)) : 0; return r; };
+    const hudL = hud.width ? Math.min(hud.left, hud.right - hudWidestWidth()) : Wc;
+    let right = Wc;
+    if (hud.width) right = Math.min(right, hudL);
+    if (ui.width) right = Math.min(right, ui.left);
+    const side = fit({ mode: 'side', x0: xL, x1: right - m, y0: m, y1: Hc - tb - m });
+    const band = hud.width ? fit({ mode: 'band', x0: xL, x1: Wc - m, y0: hud.bottom + m, y1: Math.min(Hc - tb, ui.width ? ui.top : Hc) - m }) : { s: 0 };
+    let u = band.s > side.s * 1.05 ? band : side;
+    if (!u.s) u = fit({ mode: 'full', x0: m, x1: Wc - m, y0: m, y1: Math.max(m + 120, Hc - tb - m) });   // tiny windows
+    const s0 = Math.max(1, u.s || u.Wu), Hu = u.Hu, ay = (u.y0 + u.y1) / 2;
+    let cy;
+    if ((cB - cT) * s0 <= Hu) {
+      // everything fits: centred on the screen (above the taskbar) as far as the useful band allows
+      const yc = (Hc - tb) / 2;
+      cy = clamp((cT + cB) / 2 + (ay - yc) / s0, cB - (u.y1 - ay) / s0, cT + (ay - u.y0) / s0);
+    }
+    else if ((pB - pT) * s0 <= Hu) { const h = Hu / 2 / s0; cy = clamp((cT + cB) / 2, pB - h, pT + h); }
+    else { const h = Hu / 2 / s0; cy = clamp((cT + cB) / 2, mB - h, mT + h); }
+    layout.x0 = u.x0; layout.x1 = u.x1; layout.y0 = u.y0; layout.y1 = u.y1; layout.mode = u.mode;
+    layout.ax = (u.x0 + u.x1) / 2; layout.ay = (u.y0 + u.y1) / 2; layout.s0 = s0; layout.cyHome = cy;
+    layout.cropY = cB;
+    layout.cyZoom = (pT + pB) / 2;     // zooming in from the home view heads for the middle of the 80N..57S band
   }
 
   /* ---------- view: centre in world units (cx unbounded while animating), zoom 1 = the whole world in the useful area ---------- */
   let view = { cx: 0.5, cy: 0.5, z: 1 };
   let anim = null;
-  const maxZoom = () => clamp(CONFIG.maxZoom || 64, 2, 256);
+  const maxZoom = () => clamp(CONFIG.maxZoom || 128, 2, 512);
   const scaleOf = (v) => layout.s0 * v.z;                       // css px per world unit
+  // Vertical limits: the screen stays inside the Mercator square (or, while the world is shorter than the screen, the
+  // world stays fully on screen). Near the whole-world view the home position is always allowed, even where it shows a
+  // little ocean beyond 85N (the space freed by not drawing Antarctica); the allowance fades out by 2x.
   function clampView(v) {
     const z = clamp(v.z, 1, maxZoom()), s = layout.s0 * z;
-    const lo = layout.ay / s, hi = 1 - (size.cssH - layout.ay) / s;
-    const cy = lo > hi ? (lo + hi) / 2 : clamp(v.cy, lo, hi);
-    return { cx: v.cx, cy, z };
+    let lo = layout.ay / s, hi = 1 - (size.cssH - layout.ay) / s;
+    if (lo > hi) { const t = lo; lo = hi; hi = t; }
+    const e = clamp(2 - z, 0, 1), hc = layout.cyHome;
+    if (hc < lo) lo += (hc - lo) * e; else if (hc > hi) hi += (hc - hi) * e;
+    return { cx: v.cx, cy: clamp(v.cy, lo, hi), z };
   }
+  // World y below which nothing is drawn: HOME_CROP_LAT at the whole-world view, moving off the bottom by 1.7x.
+  function cropWY(v) { const c = layout.cropY + (v.z - 1) * 0.6; return c >= 1 ? 1 : c; }
+  // The graticule ends at the last parallel above that crop (and at 80S once it is gone).
+  function gridLatMin(v, step) { const c = cropWY(v); return c >= 1 ? -80 : Math.max(-80, Math.ceil(latOfY(c) / step) * step); }
   function homeView() { return clampView({ cx: xOfLon(normLon(CONFIG.homeLon || 0)), cy: layout.cyHome, z: 1 }); }
   computeLayout();
   view = homeView();
@@ -1409,8 +1492,18 @@ var earcut = (function () {
     return [layout.ax + dx * s, layout.ay + (wy - v.cy) * s];
   }
   const lonLatToCss = (lon, lat) => worldToCss(xOfLon(normLon(lon)), mercY(lat));
-  // While the world is narrower than the screen only one copy of it is drawn (centred on the view): this is its x range.
-  function inWorldX(x, v) { v = v || view; return Math.abs(x - layout.ax) <= scaleOf(v) / 2 + 0.5; }
+  const pinXY = (p) => lonLatToCss(p.lon, clamp(p.lat, -PIN_LAT, PIN_LAT));
+  // Is a screen point on the drawn world? While the world is narrower than the screen only one copy of it is drawn
+  // (centred on the view); with y, also inside the Mercator square and above the southern crop of the world view.
+  function inWorld(x, y, v) {
+    v = v || view;
+    const s = scaleOf(v);
+    if (s < size.cssW && Math.abs(x - layout.ax) > s / 2 + 0.5) return false;
+    if (y == null) return true;
+    const wy = v.cy + (y - layout.ay) / s;
+    return wy >= 0 && wy <= cropWY(v);
+  }
+  const inWorldX = (x, v) => inWorld(x, null, v);
 
   /* ---------- animation (eased, time based; frames only while it runs) ---------- */
   const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -1466,10 +1559,17 @@ var earcut = (function () {
     if (Math.abs(z - tv.z) < 1e-9) return;
     // Zooming back out to 1x returns to the exact home view, so the resting wallpaper always looks the same.
     if (z <= 1 + 1e-9) { animateTo(homeView(), { dur: 420 }); return; }
-    animateTo({ cx: tv.cx, cy: tv.cy, z }, { dur: 420 });
+    // From the home view (whose centre sits high, as Antarctica is not drawn) zoom towards the middle of the inhabited
+    // band instead, so places in the south need no extra pan.
+    const cy = dir > 0 && isHome() && !anim ? layout.cyZoom : tv.cy;
+    animateTo({ cx: tv.cx, cy, z }, { dur: 420 });
   }
   function zoomAt(sx, sy, z, dur) {
     z = clamp(z, 1, maxZoom());
+    // While the world is narrower than the screen only its single home-centred copy is drawn: zooming about another
+    // point there would turn that copy and slice continents, so those zooms keep the home centre (and 1x is home).
+    if (z <= 1 + 1e-3) { animateTo(homeView(), { dur: dur || 260 }); return; }
+    if (layout.s0 * z < size.cssW) { animateTo({ cx: homeView().cx, cy: targetView().cy, z }, { dur: dur || 260 }); return; }
     const w = cssToWorld(sx, sy);
     const anchor = { sx, sy, wx: w.x, wy: w.y };
     const c = anchoredCentre(anchor, z);
@@ -1492,6 +1592,12 @@ var earcut = (function () {
     if (anim) requestFrame(); else afterSettle();
   }
   function afterSettle() {
+    // While the world is narrower than the screen its single drawn copy is always the home-centred one: any other
+    // centre there (keyboard, an option like ?ignoreclicks=0) glides back, so the view is never left sliced.
+    if (!anim && !drag && scaleOf(view) < size.cssW) {
+      let dx = view.cx - homeView().cx; dx -= Math.round(dx);
+      if (Math.abs(dx) > 1e-9) { animateTo({ cx: homeView().cx, cy: view.cy, z: view.z }, { dur: 300 }); if (anim) return; }
+    }
     updateHover();
     updateLabels();
     ensureLevels();
@@ -1522,7 +1628,8 @@ var earcut = (function () {
   function webZoom(v) { return Math.log2(scaleOf(v) / 256); }
 
   // Screen-space geometry shared by both renderers: device px per world unit, the anchor in device px, the visible
-  // range of world x, and (while the world is narrower than the screen) the device-px column holding its single copy.
+  // range of world x, and the device-px rectangle [x0, y0, x1, y1] that land and lines are clipped to (null = none):
+  // the column of the single world copy while the world is narrower than the screen, and the southern crop near 1x.
   function frameGeom(v) {
     const dpr = size.devW / size.cssW, dprY = size.devH / size.cssH;
     const scale = layout.s0 * v.z * dpr;
@@ -1531,7 +1638,12 @@ var earcut = (function () {
     if (xr - xl > 1) {
       xl = Math.max(xl, v.cx - 0.5); xr = Math.min(xr, v.cx + 0.5);
       const a = clamp(Math.round(axd - scale / 2), 0, size.devW), b = clamp(Math.round(axd + scale / 2), 0, size.devW);
-      clip = [a, b];
+      clip = [a, 0, b, size.devH];
+    }
+    const cw = cropWY(v);
+    if (cw < 1) {
+      const yb = clamp(Math.round(ayd + (cw - v.cy) * scale), 0, size.devH);
+      if (yb < size.devH) clip = clip ? [clip[0], 0, clip[2], yb] : [0, 0, size.devW, yb];
     }
     return { dpr, scale, axd, ayd, xl, xr, clip, k0: Math.floor(xl), k1: Math.floor(xr - 1e-12) };
   }
@@ -1609,11 +1721,13 @@ var earcut = (function () {
       vec2 fragPx() { return vec2(gl_FragCoord.x, u_vp.y - gl_FragCoord.y); }
       vec2 fragWorld() { return u_center + (fragPx() - u_anchor) / u_scale; }
       float latOf(float y) { return atan(sinh((0.5 - y) * 2.0 * PI)); }
+      // +-0.5/255 of interleaved-gradient noise: breaks the 1/255 steps of the dark gradients into a fine dither
+      float dith() { return (fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5) / 255.0; }
       out vec4 o;
     `;
     // Ocean: soft vignette plus a faint graticule computed analytically (exact 1 device-px lines, no geometry).
     const BG_FS = FS_COMMON + `
-      uniform vec3 u_ocean; uniform vec3 u_edge; uniform vec4 u_grid; uniform float u_step;
+      uniform vec3 u_ocean; uniform vec3 u_edge; uniform vec4 u_grid; uniform float u_step; uniform float u_latMin;
       void main() {
         vec2 f = fragPx(); vec2 w = fragWorld();
         vec2 q = (f / u_vp - 0.5) * vec2(u_vp.x / u_vp.y, 1.0);
@@ -1621,12 +1735,12 @@ var earcut = (function () {
         float sw = u_step / 360.0;
         float dm = abs(fract(w.x / sw + 0.5) - 0.5) * sw * u_scale;
         float lat = degrees(latOf(w.y));
-        float latN = clamp(floor(lat / u_step + 0.5) * u_step, -80.0, 80.0);
+        float latN = clamp(floor(lat / u_step + 0.5) * u_step, u_latMin, 80.0);
         float yN = 0.5 - log(tan(PI * 0.25 + radians(latN) * 0.5)) / (2.0 * PI);
         float dp = abs(w.y - yN) * u_scale;
-        float g = max(clamp(1.0 - dm, 0.0, 1.0) * step(abs(lat), 80.0), clamp(1.0 - dp, 0.0, 1.0));
+        float g = max(clamp(1.0 - dm, 0.0, 1.0) * step(lat, 80.0) * step(u_latMin, lat), clamp(1.0 - dp, 0.0, 1.0));
         col = mix(col, u_grid.rgb, u_grid.a * g);
-        o = vec4(col, 1.0);
+        o = vec4(col + dith(), 1.0);
       }`;
     // Composite: night shade for the current sun position, then the line layers, premultiplied over the map.
     const COMP_FS = FS_COMMON + `
@@ -1650,6 +1764,7 @@ var earcut = (function () {
         c = over(c, u_cCoast, cov.r);
         c = over(c, u_cVisited, dyn.r);
         c = over(c, u_cHover, dyn.g);
+        c.rgb += dith() * smoothstep(0.0, 0.004, na);      // dither the night gradient only (nothing else changes)
         o = c;
       }`;
 
@@ -1833,7 +1948,7 @@ var earcut = (function () {
       const wz = webZoom(v);
       const nLakes = m.lakes.count(wz + 1), nShore = m.shores.count(wz + 1), nAdmin = m.admin.count(wz + 1.5);
       const dpr = g.dpr, glow = CONFIG.coastGlow ? 1.5 : 0;
-      const bk = [v.cx, v.cy, v.z, size.devW, size.devH, L, nShore, nAdmin, g.axd, g.ayd, g.scale, glow].join(',');
+      const bk = [v.cx, v.cy, v.z, size.devW, size.devH, L, nShore, nAdmin, g.axd, g.ayd, g.scale, glow, sc ? sc.join(' ') : ''].join(',');
       const vk = st.visitedKey + ':' + L;
       const dk = bk + '|' + vk + '|' + st.hover;
       const fk = [bk, vk, sun.lon, sun.sinDec, CONFIG.showNight ? 1 : 0, colorVer].join('|');
@@ -1852,10 +1967,10 @@ var earcut = (function () {
       st.partial = part;
       frameKey = fk; lastHover = st.hover;
       if (part && part[2] <= part[0]) return true;       // the hover change is off screen: nothing to redraw
-      // scissor = (the partial rectangle, if any) intersected with (the single world copy's column, if clipped)
+      // scissor = (the partial rectangle, if any) intersected with (the single world copy / southern crop, if clipped)
       const scissor = (useClip) => {
         let r = part || [0, 0, size.devW, size.devH];
-        if (useClip && sc) r = [Math.max(r[0], sc[0]), r[1], Math.min(r[2], sc[1]), r[3]];
+        if (useClip && sc) r = [Math.max(r[0], sc[0]), Math.max(r[1], sc[1]), Math.min(r[2], sc[2]), Math.min(r[3], sc[3])];
         if (!part && !(useClip && sc)) { gl.disable(gl.SCISSOR_TEST); return; }
         gl.enable(gl.SCISSOR_TEST);
         gl.scissor(r[0], size.devH - r[3], Math.max(0, r[2] - r[0]), Math.max(0, r[3] - r[1]));
@@ -1923,7 +2038,9 @@ var earcut = (function () {
       gl.uniform3f(P.bg.u.u_edge, C.oceanEdge[0], C.oceanEdge[1], C.oceanEdge[2]);
       gl.uniform4fv(P.bg.u.u_grid, C.grid);
       const zl = Math.log2(v.z);
-      gl.uniform1f(P.bg.u.u_step, zl < 0.9 ? 15 : zl < 1.9 ? 10 : zl < 2.9 ? 5 : zl < 3.9 ? 2 : zl < 4.9 ? 1 : 0.5);
+      const gstep = zl < 0.9 ? 15 : zl < 1.9 ? 10 : zl < 2.9 ? 5 : zl < 3.9 ? 2 : zl < 4.9 ? 1 : 0.5;
+      gl.uniform1f(P.bg.u.u_step, gstep);
+      gl.uniform1f(P.bg.u.u_latMin, gridLatMin(v, gstep));
       gl.bindVertexArray(emptyVao);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -2183,104 +2300,161 @@ var earcut = (function () {
 
   /* ================================================================ Canvas2D fallback ================================================================ */
   const C2D = (function () {
-    let ctx = null;
+    // The map without hover and night is drawn into a cached bitmap; a hover change or the once-a-minute night update
+    // only copies that bitmap and draws the hovered country (a light wash plus its outline) and the night shade over it.
+    // The night shade is computed per sample on a small grid (the same formula as the WebGL shader) and scaled up with
+    // smoothing, so the terminator is a soft gradient. While the view animates, frames are drawn directly.
+    let ctx = null, base = null, bctx = null, baseKey = '', nightC = null, nctx = null, nightKey = '', ver = 0;
     const css = (c) => `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)},${c[3]})`;
     function init() {
       try { ctx = c2dCanvas.getContext('2d', { alpha: false }); } catch (e) { ctx = null; }
       return !!ctx;
     }
-    function render(st) {
-      if (!ctx) return false;
+    function geom(st) {
       const v = st.view, Wd = size.devW, Hd = size.devH;
-      if (c2dCanvas.width !== Wd) c2dCanvas.width = Wd;
-      if (c2dCanvas.height !== Hd) c2dCanvas.height = Hd;
       const g = frameGeom(v), WW = g.scale, ox = g.axd - v.cx * WW, oy = g.ayd - v.cy * WW;
       const lat = latOfY(v.cy);
       const L = W.pickLevel(40075016.7 * Math.cos(lat * RAD) / WW * (anim ? 3 : 1));
-      st.drawnLevel = L;
       const lonW = lonOfX(g.xl), lonE = lonOfX(g.xr);
       const latN = latOfY(-oy / WW), latS = latOfY((Hd - oy) / WW);
       const shiftsFor = (a, b) => { const out = []; for (let k = Math.floor((a + 180) / 360); k <= Math.floor((b + 180) / 360); k++) out.push(k * 360); return out; };
-      const shifts = shiftsFor(lonW, lonE);
-      const vis = (o, sh) => !(o.e + sh < lonW || o.w + sh > lonE || o.n < latS || o.s > latN);
       const X = (lon, sh) => ox + ((lon + sh + 180) / 360) * WW, Y = (la) => oy + mercY(la) * WW;
-      const poly = (p, c, sh) => { p.moveTo(X(c[0], sh), Y(c[1])); for (let i = 2; i < c.length; i += 2) p.lineTo(X(c[i], sh), Y(c[i + 1])); p.closePath(); };
-      const line = (p, c, sh) => { p.moveTo(X(c[0], sh), Y(c[1])); for (let i = 2; i < c.length; i += 2) p.lineTo(X(c[i], sh), Y(c[i + 1])); };
-      const ringOutline = (p, c, sh) => {   // ring stroke that skips the antimeridian / south-pole cut edges
-        p.moveTo(X(c[0], sh), Y(c[1]));
-        for (let i = 2; i < c.length; i += 2) {
-          const cut = (c[i] === c[i - 2] && Math.abs(c[i]) === 180) || (c[i + 1] < -89.99 && c[i - 1] < -89.99);
-          if (cut) p.moveTo(X(c[i], sh), Y(c[i + 1])); else p.lineTo(X(c[i], sh), Y(c[i + 1]));
-        }
+      return {
+        v, g, WW, ox, oy, L, lonW, lonE, latN, latS, X, Y, shifts: shiftsFor(lonW, lonE), Wd, Hd,
+        gW: lonOfX(v.cx - g.axd / WW), gE: lonOfX(v.cx + (Wd - g.axd) / WW),
+        vis: (o, sh) => !(o.e + sh < lonW || o.w + sh > lonE || o.n < latS || o.s > latN)
       };
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      const gr = ctx.createRadialGradient(Wd / 2, Hd / 2, 0, Wd / 2, Hd / 2, Math.hypot(Wd, Hd) * 0.6);
+    }
+    const poly = (G, p, c, sh) => { p.moveTo(G.X(c[0], sh), G.Y(c[1])); for (let i = 2; i < c.length; i += 2) p.lineTo(G.X(c[i], sh), G.Y(c[i + 1])); p.closePath(); };
+    const line = (G, p, c, sh) => { p.moveTo(G.X(c[0], sh), G.Y(c[1])); for (let i = 2; i < c.length; i += 2) p.lineTo(G.X(c[i], sh), G.Y(c[i + 1])); };
+    const ringOutline = (G, p, c, sh) => {   // ring stroke that skips the antimeridian / south-pole cut edges
+      p.moveTo(G.X(c[0], sh), G.Y(c[1]));
+      for (let i = 2; i < c.length; i += 2) {
+        const cut = (c[i] === c[i - 2] && Math.abs(c[i]) === 180) || (c[i + 1] < -89.99 && c[i - 1] < -89.99);
+        if (cut) p.moveTo(G.X(c[i], sh), G.Y(c[i + 1])); else p.lineTo(G.X(c[i], sh), G.Y(c[i + 1]));
+      }
+    };
+    const clipTo = (c, G) => { if (G.g.clip) { const r = G.g.clip; c.beginPath(); c.rect(r[0], r[1], r[2] - r[0], r[3] - r[1]); c.clip(); } };
+    function drawBase(st, G, c) {
+      const { v, Wd, Hd, X, Y, L, shifts, vis } = G;
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      const gr = c.createRadialGradient(Wd / 2, Hd / 2, 0, Wd / 2, Hd / 2, Math.hypot(Wd, Hd) * 0.6);
       gr.addColorStop(0, css(C.ocean)); gr.addColorStop(1, css(C.oceanEdge));
-      ctx.fillStyle = gr; ctx.fillRect(0, 0, Wd, Hd);
+      c.fillStyle = gr; c.fillRect(0, 0, Wd, Hd);
       const zl = Math.log2(v.z), step = zl < 0.9 ? 15 : zl < 1.9 ? 10 : zl < 2.9 ? 5 : zl < 3.9 ? 2 : zl < 4.9 ? 1 : 0.5;
-      const gW = lonOfX(v.cx - g.axd / WW), gE = lonOfX(v.cx + (Wd - g.axd) / WW);
-      ctx.strokeStyle = css(C.grid); ctx.lineWidth = 1; ctx.beginPath();
-      for (let lo = Math.floor(gW / step) * step; lo <= gE; lo += step) { const x = Math.round(X(lo, 0)) + 0.5; ctx.moveTo(x, Y(80)); ctx.lineTo(x, Y(-80)); }
-      for (let la = -80; la <= 80; la += step) { if (la < latS - step || la > latN + step) continue; const y = Math.round(Y(la)) + 0.5; ctx.moveTo(0, y); ctx.lineTo(Wd, y); }
-      ctx.stroke();
-      ctx.save();
-      if (g.clip) { ctx.beginPath(); ctx.rect(g.clip[0], 0, g.clip[1] - g.clip[0], Hd); ctx.clip(); }
+      c.strokeStyle = css(C.grid); c.lineWidth = 1; c.beginPath();
+      const gMin = gridLatMin(v, step);
+      for (let lo = Math.floor(G.gW / step) * step; lo <= G.gE; lo += step) { const x = Math.round(X(lo, 0)) + 0.5; c.moveTo(x, Y(80)); c.lineTo(x, Y(gMin)); }
+      for (let la = Math.ceil(gMin / step) * step; la <= 80; la += step) { if (la < G.latS - step || la > G.latN + step) continue; const y = Math.round(Y(la)) + 0.5; c.moveTo(0, y); c.lineTo(Wd, y); }
+      c.stroke();
+      c.save();
+      clipTo(c, G);
       const R = W.countryRings(L);
-      const land = new Path2D(), visited = new Path2D(), hover = new Path2D(), visitedLine = new Path2D(), hoverLine = new Path2D();
+      const land = new Path2D(), visited = new Path2D(), visitedLine = new Path2D();
       for (const sh of shifts) R.forEach((rs, ci) => {
         const b = W.countries[ci].bbox;
-        if (b[2] + sh < lonW || b[0] + sh > lonE || b[3] < latS || b[1] > latN) return;
-        const isHover = ci === st.hover, isVisited = st.visited.has(ci);
-        const tgt = isHover ? hover : isVisited ? visited : land;
+        if (b[2] + sh < G.lonW || b[0] + sh > G.lonE || b[3] < G.latS || b[1] > G.latN) return;
+        const isVisited = st.visited.has(ci);
         for (const r of rs) {
           if (!vis(r, sh)) continue;
-          poly(tgt, r.c, sh);
-          if (isVisited) ringOutline(visitedLine, r.c, sh);
-          if (isHover) ringOutline(hoverLine, r.c, sh);
+          poly(G, isVisited ? visited : land, r.c, sh);
+          if (isVisited) ringOutline(G, visitedLine, r.c, sh);
         }
       });
-      ctx.fillStyle = css(C.land); ctx.fill(land, 'evenodd');
-      ctx.fillStyle = css(C.visited); ctx.fill(visited, 'evenodd');
-      ctx.fillStyle = css(st.visited.has(st.hover) ? C.visitedHover : C.landHover); ctx.fill(hover, 'evenodd');
+      c.fillStyle = css(C.land); c.fill(land, 'evenodd');
+      c.fillStyle = css(C.visited); c.fill(visited, 'evenodd');
       const wz = webZoom(v);
       if (W.lakeRings) {
         const lp = new Path2D(), LR = W.lakeRings(Math.min(L, W.lakeLevels.length - 1));
-        for (const sh of shifts) for (let k = 0; k < LR.length; k++) { if (W.lakes[k].minZoom > wz + 1) continue; for (const r of LR[k]) if (vis(r, sh)) poly(lp, r.c, sh); }
-        ctx.fillStyle = css(C.lake); ctx.fill(lp, 'evenodd');
-        ctx.strokeStyle = css(C.coast); ctx.stroke(lp);
+        for (const sh of shifts) for (let k = 0; k < LR.length; k++) { if (W.lakes[k].minZoom > wz + 1) continue; for (const r of LR[k]) if (vis(r, sh)) poly(G, lp, r.c, sh); }
+        c.fillStyle = css(C.lake); c.fill(lp, 'evenodd');
+        c.strokeStyle = css(C.coast); c.stroke(lp);
       }
       if (W.admin1) {
         const ap = new Path2D();
-        for (const sh of shifts) for (const o of W.admin1(Math.min(L, W.admin1Levels.length - 1))) if (o.minZoom <= wz + 1.5 && vis(o, sh)) line(ap, o.c, sh);
-        ctx.strokeStyle = css(C.admin); ctx.stroke(ap);
+        for (const sh of shifts) for (const o of W.admin1(Math.min(L, W.admin1Levels.length - 1))) if (o.minZoom <= wz + 1.5 && vis(o, sh)) line(G, ap, o.c, sh);
+        c.strokeStyle = css(C.admin); c.stroke(ap);
       }
       const coast = new Path2D(), border = new Path2D();
-      for (const sh of shifts) for (const a of W.countryArcs(L)) { if ((a.kind !== 0 && a.kind !== 1) || !vis(a, sh)) continue; line(a.kind === 1 ? border : coast, a.c, sh); }
-      ctx.lineJoin = 'round';
-      if (CONFIG.coastGlow) { ctx.strokeStyle = css([C.glow[0], C.glow[1], C.glow[2], C.glow[3] * 0.8]); ctx.lineWidth = 3; ctx.stroke(coast); ctx.lineWidth = 1; }
-      ctx.strokeStyle = css(C.border); ctx.stroke(border);
-      ctx.strokeStyle = css(C.coast); ctx.stroke(coast);
-      ctx.strokeStyle = css(C.visitedLine); ctx.lineWidth = Math.max(1, 0.84 * g.dpr); ctx.stroke(visitedLine); ctx.lineWidth = 1;
-      if (st.hover >= 0) { ctx.strokeStyle = css(C.hoverLine); ctx.lineWidth = Math.max(1, g.dpr); ctx.stroke(hoverLine); ctx.lineWidth = 1; }
-      ctx.restore();
-      if (CONFIG.showNight) {
-        // night side of the terminator (sun altitude < 0), coarse polygon, over the whole screen
-        const np = new Path2D(), tanDec = Math.tan(sun.dec || 1e-6) || 1e-6;
-        for (const sh of shiftsFor(gW, gE)) {
-          let first = true;
-          for (let lo = -180; lo <= 180; lo += 2) {
-            const la = Math.atan(-Math.cos(lo * RAD - sun.lon) / tanDec) / RAD;
-            const x = X(lo, sh), y = Y(clamp(la, -MAXLAT, MAXLAT));
-            if (first) { np.moveTo(x, y); first = false; } else np.lineTo(x, y);
-          }
-          const edge = Y(sun.dec > 0 ? -MAXLAT : MAXLAT);
-          np.lineTo(X(180, sh), edge); np.lineTo(X(-180, sh), edge); np.closePath();
-        }
-        ctx.fillStyle = css([C.night[0], C.night[1], C.night[2], C.night[3] * 0.7]); ctx.fill(np);
+      for (const sh of shifts) for (const a of W.countryArcs(L)) { if ((a.kind !== 0 && a.kind !== 1) || !vis(a, sh)) continue; line(G, a.kind === 1 ? border : coast, a.c, sh); }
+      c.lineJoin = 'round';
+      if (CONFIG.coastGlow) { c.strokeStyle = css([C.glow[0], C.glow[1], C.glow[2], C.glow[3] * 0.8]); c.lineWidth = 3; c.stroke(coast); c.lineWidth = 1; }
+      c.strokeStyle = css(C.border); c.stroke(border);
+      c.strokeStyle = css(C.coast); c.stroke(coast);
+      c.strokeStyle = css(C.visitedLine); c.lineWidth = Math.max(1, 0.84 * G.g.dpr); c.stroke(visitedLine); c.lineWidth = 1;
+      c.restore();
+    }
+    // the hovered country: a light wash (exactly landHover over plain land) and a 1 device-px outline
+    function drawHover(st, G, c) {
+      const ci = st.hover;
+      if (ci < 0) return;
+      const rs = W.countryRings(G.L)[ci], b = W.countries[ci].bbox;
+      const fill = new Path2D(), out = new Path2D();
+      for (const sh of G.shifts) {
+        if (b[2] + sh < G.lonW || b[0] + sh > G.lonE || b[3] < G.latS || b[1] > G.latN) continue;
+        for (const r of rs) { if (!G.vis(r, sh)) continue; poly(G, fill, r.c, sh); ringOutline(G, out, r.c, sh); }
       }
+      c.save();
+      clipTo(c, G);
+      c.fillStyle = 'rgba(121,172,252,0.1)'; c.fill(fill, 'evenodd');
+      c.lineJoin = 'round';
+      c.strokeStyle = css(C.hoverLine); c.lineWidth = Math.max(1, G.g.dpr); c.stroke(out);
+      c.restore();
+    }
+    function drawNight(G, c) {
+      const { v, g, Wd, Hd } = G;
+      const f = Math.max(4, Math.ceil(Math.max(Wd, Hd) / 256));        // device px per sample
+      const nw = Math.ceil(Wd / f) + 2, nh = Math.ceil(Hd / f) + 2;
+      const key = [nw, nh, f, v.cx, v.cy, v.z, g.axd, g.ayd, g.scale, sun.lon, sun.sinDec, C.night.join(' '), ver].join(',');
+      if (!nightC) { nightC = document.createElement('canvas'); nctx = nightC.getContext('2d'); }
+      if (key !== nightKey) {
+        if (nightC.width !== nw) nightC.width = nw;
+        if (nightC.height !== nh) nightC.height = nh;
+        const img = nctx.createImageData(nw, nh), d = img.data;
+        const r = Math.round(C.night[0] * 255), gg = Math.round(C.night[1] * 255), bl = Math.round(C.night[2] * 255);
+        const cosL = new Float64Array(nw), sinL = new Float64Array(nw);
+        for (let i = 0; i < nw; i++) { const lon = ((v.cx + (i * f - g.axd) / g.scale) * 2 - 1) * PI - sun.lon; cosL[i] = Math.cos(lon); }
+        for (let j = 0, k = 0; j < nh; j++) {
+          const wy = clamp(v.cy + (j * f - g.ayd) / g.scale, 0, 1), la = Math.atan(Math.sinh((0.5 - wy) * 2 * PI));
+          const a = Math.sin(la) * sun.sinDec, bb = Math.cos(la) * sun.cosDec;
+          for (let i = 0; i < nw; i++, k += 4) {
+            const t = clamp((a + bb * cosL[i] - 0.03) / (-0.21 - 0.03), 0, 1);
+            d[k] = r; d[k + 1] = gg; d[k + 2] = bl; d[k + 3] = Math.round(255 * C.night[3] * t * t * (3 - 2 * t));
+          }
+        }
+        nctx.putImageData(img, 0, 0);
+        nightKey = key;
+      }
+      c.save();
+      c.imageSmoothingEnabled = true;
+      c.imageSmoothingQuality = 'high';
+      c.drawImage(nightC, 0, 0, nw, nh, -f / 2, -f / 2, nw * f, nh * f);
+      c.restore();
+    }
+    function render(st) {
+      if (!ctx) return false;
+      const Wd = size.devW, Hd = size.devH;
+      if (c2dCanvas.width !== Wd) c2dCanvas.width = Wd;
+      if (c2dCanvas.height !== Hd) c2dCanvas.height = Hd;
+      const G = geom(st);
+      st.drawnLevel = G.L;
+      if (anim) {
+        drawBase(st, G, ctx); baseKey = '';
+      } else {
+        if (!base) { base = document.createElement('canvas'); bctx = base.getContext('2d', { alpha: false }); }
+        if (base.width !== Wd || base.height !== Hd) { base.width = Wd; base.height = Hd; baseKey = ''; }
+        const v = st.view, k = [v.cx, v.cy, v.z, Wd, Hd, G.L, G.g.axd, G.g.ayd, G.g.scale, G.g.clip ? G.g.clip.join(' ') : '', st.visitedKey, CONFIG.coastGlow ? 1 : 0, ver].join(',');
+        if (k !== baseKey) { drawBase(st, G, bctx); baseKey = k; }
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(base, 0, 0);
+      }
+      drawHover(st, G, ctx);
+      if (CONFIG.showNight) drawNight(G, ctx);
       return true;
     }
-    return { init, render };
+    // release the bitmaps (WebGL2 is back in use)
+    function free() { if (base) { base.width = base.height = 1; } if (nightC) { nightC.width = nightC.height = 1; } baseKey = nightKey = ''; }
+    return { init, render, free, invalidate() { ver++; baseKey = nightKey = ''; } };
   })();
 
   /* ---------- renderer selection, context loss ---------- */
@@ -2298,6 +2472,7 @@ var earcut = (function () {
     c2dCanvas.style.display = 'none';
     glCanvas.style.display = 'block';
     if (c2dCanvas.width > 1) { c2dCanvas.width = 1; c2dCanvas.height = 1; }   // free the fallback's backing store
+    C2D.free();
   }
   function applyCanvasSize() {
     if (glCanvas.width !== size.devW) glCanvas.width = size.devW;
@@ -2352,30 +2527,104 @@ var earcut = (function () {
     } catch (e) { return false; }
   })();
   let storeRecovered = false;
+  // Parse a stored value: {v, pins, removed} (or an old bare array of pins); null when it is not usable.
+  function parseStore(raw) {
+    if (!raw) return null;
+    try {
+      const v = JSON.parse(raw);
+      if (Array.isArray(v)) return { pins: v, removed: [] };
+      if (v && typeof v === 'object' && (Array.isArray(v.pins) || Array.isArray(v.removed))) return v;
+    } catch (e) { /* corrupt */ }
+    return null;
+  }
   function readStore() {
     if (!storageOK) return null;
     let raw = null;
     try { raw = window.localStorage.getItem(STORE_KEY); } catch (e) { storageOK = false; return null; }
     if (!raw) return null;
-    try {
-      const v = JSON.parse(raw);
-      if (Array.isArray(v)) return { pins: v };
-      if (v && typeof v === 'object' && (Array.isArray(v.pins) || Array.isArray(v.removed))) return v;
-    } catch (e) { /* fall through: corrupt */ }
+    const v = parseStore(raw);
+    if (v) return v;
     try { window.localStorage.setItem(BACKUP_KEY, raw); } catch (e) { /* ignore */ }
     storeRecovered = true;
     return null;
   }
-  let pins = [], removedIds = new Set(), pinsVer = 0;
+  // Pins and removals carry a time stamp (t, ms). Several wallpaper instances (one per monitor) share one localStorage:
+  // every write first merges what is stored, and a 'storage' event merges another instance's write at once. Per pin id
+  // the newest event wins (a drop or an Undo restore against a removal; a tie keeps it removed), so a removal on one
+  // screen is never undone by the other and no instance's pins are lost.
+  let pins = [], tomb = new Map(), pinsVer = 0, clockT = 0;
   const undoStack = [];
+  const stamp = () => (clockT = Math.max(Date.now(), clockT + 1));
+  function tombsOf(st) {
+    const m = new Map();
+    if (st && Array.isArray(st.removed)) for (const r of st.removed) {
+      let id = null, t = 0;
+      if (typeof r === 'string') id = r;
+      else if (Array.isArray(r) && typeof r[0] === 'string') { id = r[0]; t = +r[1] || 0; }
+      else if (r && typeof r === 'object' && typeof r.id === 'string') { id = r.id; t = +r.t || 0; }
+      if (id) { id = id.slice(0, 64); if (!(m.get(id) >= t)) m.set(id, t); }
+    }
+    return m;
+  }
+  const alive = (p) => !(tomb.get(p.id) >= p.t);
+  // Merge a stored copy into memory; returns true when the pins in memory changed.
+  function mergeFrom(st) {
+    if (!st) return false;
+    for (const [id, t] of tombsOf(st)) if (!(tomb.get(id) >= t)) tomb.set(id, t);
+    const idx = new Map(pins.map((p, i) => [p.id, i]));
+    const list = pins.slice(), added = [];
+    let changed = false;
+    if (Array.isArray(st.pins)) for (const raw of st.pins) {
+      const p = normPin(raw);
+      if (!p) continue;
+      const i = idx.get(p.id);
+      if (i == null) { if (!added.some((q) => q.id === p.id)) added.push(p); }
+      else if (p.t > list[i].t) { list[i] = p; changed = true; }
+    }
+    added.sort((a, b) => a.t - b.t);
+    const next = list.concat(added).filter(alive);
+    if (next.length !== pins.length || added.some(alive)) changed = true;
+    pins = next;
+    return changed;
+  }
+  // Does the stored copy hold everything this instance knows (every pin and removal, at least as new)?
+  function storeCovers(st) {
+    if (!st) return !pins.length && !tomb.size;
+    const sp = new Map(), stb = tombsOf(st);
+    if (Array.isArray(st.pins)) for (const raw of st.pins) { const p = normPin(raw); if (p && !(sp.get(p.id) >= p.t)) sp.set(p.id, p.t); }
+    for (const p of pins) if (!(sp.get(p.id) >= p.t)) return false;
+    for (const [id, t] of tomb) if (!(stb.get(id) >= t)) return false;
+    return true;
+  }
+  function storeValue() {
+    const rm = Array.from(tomb).sort((a, b) => a[1] - b[1]).slice(-500);
+    return JSON.stringify({ v: 1, pins, removed: rm });
+  }
+  // Returns true when another instance's changes were merged in (the caller re-renders anyway).
   function writeStore() {
     const was = storageOK;
+    let ok = false, merged = false;
     try {
-      window.localStorage.setItem(STORE_KEY, JSON.stringify({ v: 1, pins, removed: Array.from(removedIds).slice(-500) }));
-      storageOK = true;
-    } catch (e) { storageOK = false; }
+      const ls = window.localStorage;
+      let raw = null;
+      try { raw = ls.getItem(STORE_KEY); } catch (e) { raw = null; }
+      if (raw) merged = mergeFrom(parseStore(raw));
+      const value = storeValue();
+      ls.setItem(STORE_KEY, value);
+      ok = ls.getItem(STORE_KEY) === value;          // a write that silently does nothing does not count as saved
+    } catch (e) { ok = false; }
+    storageOK = ok;
     if (was !== storageOK) updateStats();
+    return merged;
   }
+  addEventListener('storage', (e) => {
+    if (e.key !== STORE_KEY || e.storageArea !== (function () { try { return window.localStorage; } catch (err) { return null; } })()) return;
+    const st = parseStore(e.newValue);
+    if (!st) return;
+    const changed = mergeFrom(st);
+    if (!storeCovers(st)) writeStore();              // this instance knows something the other one did not: store it
+    if (changed) pinsChanged();
+  });
   const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
   const round4 = (v) => Math.round(v * 1e4) / 1e4;
   function hashId(lon, lat) {
@@ -2383,9 +2632,13 @@ var earcut = (function () {
     for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
     return 'm' + (h >>> 0).toString(36);
   }
+  // Search radii for naming a pin, from the ground size of a css px at this zoom: on land the nearest notable place in
+  // that country within about 12 px (15..80 km); just off a coast, the coastal place within the same radius or 4.2 px
+  // (up to 160 km), because at the whole-world view a click cannot be placed more precisely than a few px.
   function radiusKm(lat) {
     const kmPerPx = 40075.017 * Math.cos(lat * RAD) / scaleOf(targetView());
-    return clamp(12 * kmPerPx, 15, 80);
+    const land = clamp(12 * kmPerPx, 15, 80);
+    return { land, coast: clamp(Math.max(land, 4.2 * kmPerPx), 15, 160), kmPerPx };
   }
   // "Singapore, Singapore" -> "Singapore" (a city-state named after itself)
   function tidyName(name, country) { return country && name === country + ', ' + country ? country : name; }
@@ -2409,7 +2662,8 @@ var earcut = (function () {
       if (!iso) iso = d.iso3;
     }
     name = tidyName(name, country);
-    return { id: typeof p.id === 'string' && p.id ? p.id.slice(0, 64) : hashId(lon, lat), lon, lat, name, country, iso, added: typeof p.added === 'string' ? p.added.slice(0, 32) : '' };
+    const t = +p.t;
+    return { id: typeof p.id === 'string' && p.id ? p.id.slice(0, 64) : hashId(lon, lat), lon, lat, name, country, iso, added: typeof p.added === 'string' ? p.added.slice(0, 32) : '', t: isFinite(t) && t > 0 ? Math.round(t) : 0 };
   }
   // window.MY_PINS lives in its own small <script> block, so a typing mistake there only loses those pins.
   let myPinsBroken = false;
@@ -2427,11 +2681,11 @@ var earcut = (function () {
   function loadPins() {
     const emb = embeddedPins();
     const st = readStore();
-    removedIds = new Set(st && Array.isArray(st.removed) ? st.removed.filter((x) => typeof x === 'string') : []);
+    tomb = tombsOf(st);
     const byId = new Map();
-    for (const raw of emb) { const p = normPin(raw); if (p && !removedIds.has(p.id)) byId.set(p.id, p); }
-    if (st && Array.isArray(st.pins)) for (const raw of st.pins) { const p = normPin(raw); if (p && !removedIds.has(p.id)) byId.set(p.id, p); }
-    pins = Array.from(byId.values());
+    for (const raw of emb) { const p = normPin(raw); if (p && !(byId.has(p.id) && byId.get(p.id).t >= p.t)) byId.set(p.id, p); }
+    if (st && Array.isArray(st.pins)) for (const raw of st.pins) { const p = normPin(raw); if (p && !(byId.has(p.id) && byId.get(p.id).t > p.t)) byId.set(p.id, p); }
+    pins = Array.from(byId.values()).filter(alive);
     if (storeRecovered) writeStore();          // replace the corrupt value (a copy is in the backup key)
   }
   function refreshVisited() {
@@ -2439,8 +2693,17 @@ var earcut = (function () {
     for (const p of pins) { const ci = W.byIso3.get(p.iso); if (ci != null) visited.add(ci); }
     visitedKey = Array.from(visited).sort((a, b) => a - b).join(',');
   }
+  // Undo entries another instance has already made moot (its pin was removed or restored there) are dropped.
+  function pruneUndo() {
+    for (let u = undoStack[undoStack.length - 1]; u; u = undoStack[undoStack.length - 1]) {
+      const has = pins.some((p) => p.id === u.pin.id);
+      if ((u.type === 'add') === has) break;
+      undoStack.pop();
+    }
+  }
   function pinsChanged() {
     pinsVer++;
+    pruneUndo();
     refreshVisited();
     syncPinEls();
     updateStats();
@@ -2452,8 +2715,8 @@ var earcut = (function () {
     requestFrame();
   }
   function addPin(p, fromUndo) {
+    p.t = stamp();
     pins.push(p);
-    removedIds.delete(p.id);
     if (!fromUndo) undoStack.push({ type: 'add', pin: p });
     writeStore();
     pinsChanged();
@@ -2463,7 +2726,7 @@ var earcut = (function () {
     if (i < 0) return null;
     const p = pins[i];
     pins.splice(i, 1);
-    removedIds.add(p.id);
+    tomb.set(p.id, stamp());
     if (!fromUndo) undoStack.push({ type: 'remove', pin: p, index: i });
     if (selectedId === id) closeCard();
     writeStore();
@@ -2471,17 +2734,107 @@ var earcut = (function () {
     return p;
   }
   function undo() {
+    pruneUndo();
     const u = undoStack.pop();
-    if (!u) return;
+    if (!u) { pinsChanged(); return; }
+    lastDrop = null;
     if (u.type === 'add') { removePin(u.pin.id, true); toast('Removed <b>' + esc(shortName(u.pin)) + '</b>'); }
-    else { pins.splice(Math.min(u.index, pins.length), 0, u.pin); removedIds.delete(u.pin.id); writeStore(); pinsChanged(); toast('Restored <b>' + esc(shortName(u.pin)) + '</b>'); }
+    else {
+      const p = Object.assign({}, u.pin, { t: stamp() });     // newer than its removal, here and in other instances
+      pins.splice(Math.min(u.index, pins.length), 0, p);
+      writeStore(); pinsChanged();
+      toast('Restored <b>' + esc(shortName(p)) + '</b>');
+    }
   }
-  function dropPinAt(x, y) {
+  // What a pin-mode click at (x, y) is named. The tooltip preview and the drop use this same function with the same
+  // inputs, so the name the user sees is the name that is saved (the last result is reused for the same point and view).
+  let descCache = null;
+  function describeAt(x, y) {
+    const key = [x, y, view.cx, view.cy, view.z, layout.s0, layout.ax, layout.ay, targetView().z].join(',');
+    if (descCache && descCache.key === key) return descCache.d;
     const w = cssToWorld(x, y);
-    if (w.y < 0 || w.y > 1) return;
-    const lon = round4(normLon(lonOfX(w.x))), lat = round4(latOfY(w.y));
-    const d = W.describe(lon, lat, { radiusKm: radiusKm(lat) });
-    const p = { id: 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36).padStart(2, '0'), lon, lat, name: tidyName(d.label, d.country), country: d.country, iso: d.iso3, added: today() };
+    let d = null;
+    if (w.y >= 0 && w.y <= 1) {
+      const lon = round4(normLon(lonOfX(w.x))), lat = round4(latOfY(w.y)), r = radiusKm(lat);
+      let g = W.describe(lon, lat, { radiusKm: r.land, coastRadiusKm: r.coast });
+      // Zoomed out, a click cannot be placed more precisely than a px or two: a much more important place within 1.6 px,
+      // even across a border, names the pin (Singapore rather than Johor Bahru, Hong Kong rather than Shenzhen).
+      const P = W.places;
+      if (P && r.kmPerPx > 4) {
+        const R = 1.6 * r.kmPerPx, dLat = R / 111.2, cosl = Math.max(0.01, Math.cos(lat * RAD));
+        let best = -1, bs = g.place >= 0 ? P.scalerank[g.place] - 2 : 99, bd = Infinity;
+        for (let i = 0; i < P.n; i++) {
+          if (Math.abs(P.lat[i] - lat) > dLat || P.scalerank[i] > bs) continue;
+          const dx = Math.abs(normLon(P.lon[i] - lon)) * cosl * 111.2;
+          if (dx > R) continue;
+          const dk = W.distanceKm(lon, lat, P.lon[i], P.lat[i]);
+          if (dk > R) continue;
+          if (P.scalerank[i] < bs || dk < bd) { bs = P.scalerank[i]; bd = dk; best = i; }
+        }
+        if (best >= 0 && best !== g.place && P.country[best] >= 0) {
+          const C = W.countries[P.country[best]];
+          g = { label: P.name[best] + ', ' + C.name, country: C.name, iso3: C.iso3 };
+        }
+      }
+      d = { lon, lat, name: tidyName(g.label, g.country), country: g.country, iso: g.iso3 };
+    }
+    descCache = { key, d };
+    return d;
+  }
+  // A pin-mode click opens an existing pin instead of adding a near-duplicate:
+  //  - on a pin's body (the lower part of the teardrop): it opens that pin, unless the click is right on another notable
+  //    place (within 3.5 px of a city important enough for this zoom) and would be named differently - so at the
+  //    whole-world view Amsterdam can still be pinned where Brussels' marker covers it;
+  //  - elsewhere: it opens a pin whose tip is within 8 px when the click would get the same name (two sea points count
+  //    as the same), so the tip, its shadow and a re-click next to it do not add a copy.
+  function notablePlaceNear(x, y, exclude) {
+    const P = W.places;
+    if (!P) return false;
+    const B = boxLL([x - 3.5, y - 3.5, x + 3.5, y + 3.5]), lim = Math.max(5, webZoom(view) + 3.2);
+    for (let i = 0; i < P.n; i++) {
+      if (P.lat[i] < B[1] || P.lat[i] > B[3] || P.minZoom[i] > lim || P.name[i] === exclude) continue;
+      let lon = P.lon[i];
+      if (lon < B[0]) lon += 360; else if (lon > B[2]) lon -= 360;
+      if (lon < B[0] || lon > B[2]) continue;
+      const [px, py] = lonLatToCss(P.lon[i], P.lat[i]);
+      if (Math.hypot(px - x, py - y) <= 3.5) return true;
+    }
+    return false;
+  }
+  function pinTarget(x, y, bodyId) {
+    const d = describeAt(x, y);
+    if (!d) return null;
+    if (bodyId) {
+      const bp = pins.find((p) => p.id === bodyId);
+      if (bp && (bp.name === d.name || !notablePlaceNear(x, y, shortName(bp)))) return { open: bodyId, d };
+    }
+    let best = null, bd = Infinity;
+    for (const p of pins) {
+      const el = pinEls.get(p.id);
+      if (!el || el._h) continue;
+      const [px, py] = pinXY(p), dist = Math.hypot(px - x, py - y);
+      if (dist <= 8 && dist < bd && (p.name === d.name || (/\u00b0/.test(p.name) && /\u00b0/.test(d.name)))) { bd = dist; best = p; }
+    }
+    return best ? { open: best.id, d } : { d };
+  }
+  // Pin mode click handling shared by the map and the pin bodies: a quick second click on the spot of the last drop (a
+  // double or triple click: within 500 ms and 3 px, or 8 px with the same name) is ignored; otherwise the click opens a
+  // pin (see pinTarget) or drops a new one.
+  let lastDrop = null;
+  function pinModeClick(e, bodyId) {
+    const x = e.clientX, y = e.clientY, now = performance.now();
+    if (lastDrop && now - lastDrop.t < 500) {
+      const dist = Math.hypot(x - lastDrop.x, y - lastDrop.y);
+      if (dist <= 3 || e.detail > 1 || (dist < 8 && (describeAt(x, y) || {}).name === lastDrop.name)) { lastDrop.t = now; return; }
+    }
+    const tg = pinTarget(x, y, bodyId);
+    if (!tg) return;
+    if (tg.open) { lastDrop = null; openCard(tg.open); armPinTimeout(); return; }
+    lastDrop = { t: now, x, y, name: tg.d.name };
+    dropPin(tg.d);
+  }
+  function dropPin(d) {
+    const p = { id: 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36).padStart(2, '0'), lon: d.lon, lat: d.lat, name: d.name, country: d.country, iso: d.iso, added: today() };
     addPin(p);
     const el = pinEls.get(p.id);
     if (el) { el.classList.add('new'); setTimeout(() => el.classList.remove('new'), 800); }
@@ -2492,7 +2845,7 @@ var earcut = (function () {
   /* pin elements (DOM: crisp at any DPR, hit-testable, positioned with transforms in the same frame as the map) */
   const PIN_HTML = '<svg viewBox="-12 -30 24 33" aria-hidden="true"><circle class="rp" cx="0" cy="0" r="21"/>' +
     '<ellipse class="ps" cx="0" cy="0.5" rx="4.5" ry="1.8"/><circle class="pg" cx="0" cy="-17" r="11.5"/>' +
-    '<path class="pd" d="M0 0L6.08 -14.44A6.6 6.6 0 1 0 -6.08 -14.44Z"/><circle class="pc" cx="0" cy="-17" r="2.4"/></svg><span class="ph"></span>';
+    '<path class="pd" d="M0 0L6.08 -14.44A6.6 6.6 0 1 0 -6.08 -14.44Z"/><circle class="pc" cx="0" cy="-17" r="2.4"/></svg><span class="ph"></span><span class="pb"></span>';
   const pinEls = new Map();
   function syncPinEls() {
     const keep = new Set(pins.map((p) => p.id));
@@ -2518,19 +2871,22 @@ var earcut = (function () {
     for (const ch of pinsLayer.children) { if (ch._h) continue; if (list[i] && list[i][1] !== ch) { inOrder = false; break; } i++; }
     if (!inOrder) for (const [, el] of list) pinsLayer.appendChild(el);
   }
+  // The whole teardrop is clickable: the head (.ph) always opens the pin's card. In pin mode a click on the body
+  // (.pb) is treated like a map click at that point (pinModeClick), which opens this pin when the click would get its
+  // name and otherwise drops the nearby place, so dense places stay droppable at the whole-world view.
   pinsLayer.addEventListener('click', (e) => {
     const el = e.target.closest('.pin');
     if (!el) return;
     e.stopPropagation();
     if (!xPanel.hidden) closeExport();
+    if (pinMode && e.target.classList.contains('pb')) {
+      if (selectedId && selectedId !== el.dataset.id) { closeCard(); return; }
+      pinModeClick(e, el.dataset.id);
+      return;
+    }
+    lastDrop = null;
     openCard(el.dataset.id);
     armPinTimeout();
-  });
-  pinsLayer.addEventListener('mouseover', (e) => {
-    const el = e.target.closest('.pin');
-    if (!el) return;
-    const p = pins.find((q) => q.id === el.dataset.id);
-    if (p) { setHover(-1); showTip(esc(p.name) + '<small>' + (p.added ? 'Added ' + esc(fmtDate(p.added)) + ' \u00b7 ' : '') + 'click for details</small>'); }
   });
 
   function positionOverlays() {
@@ -2539,8 +2895,8 @@ var earcut = (function () {
     for (const p of pins) {
       const el = pinEls.get(p.id);
       if (!el) continue;
-      const [x, y] = lonLatToCss(p.lon, p.lat);
-      const on = x > -20 && y > -10 && x < size.cssW + 20 && y < size.cssH + 40 && p.lat < MAXLAT && p.lat > -MAXLAT && inWorldX(x);
+      const [x, y] = pinXY(p);
+      const on = x > -20 && y > -10 && x < size.cssW + 20 && y < size.cssH + 40 && inWorldX(x);
       if (on) {
         const t = 'translate(' + snap(x) + 'px,' + snap(y) + 'px)';
         if (el._t !== t) { el.style.transform = t; el._t = t; el._y = y; }
@@ -2605,15 +2961,67 @@ var earcut = (function () {
     if (pinMode) out.push(rectOf(bannerEl));
     return out.filter((r) => r && r.width > 0);
   }
-  // Does a label box cover a visible lake? (a 9 x 3 grid of samples over the box, plus a 2 px margin)
+  // Screen box [x0, y0, x1, y1] -> lon/lat bounds [w, s, e, n] (Mercator is separable, so this is exact).
+  function boxLL(b) {
+    const a = cssToWorld(b[0], b[1]), c = cssToWorld(b[2], b[3]);
+    const w = normLon(lonOfX(a.x));
+    return [w, latOfY(c.y), w + (c.x - a.x) * 360, latOfY(a.y)];
+  }
+  function inRingsLL(rs, lon, lat) {         // even-odd over all rings of a feature
+    let inside = false;
+    for (const r of rs) {
+      if (lon < r.w || lon > r.e || lat < r.s || lat > r.n) continue;
+      if (ringInRing(r.c, lon, lat)) inside = !inside;
+    }
+    return inside;
+  }
+  // Does a segment touch the box [w, s, e, n]? (Liang-Barsky clip)
+  function segInBox(x0, y0, x1, y1, B) {
+    let t0 = 0, t1 = 1;
+    const dx = x1 - x0, dy = y1 - y0;
+    for (const [p, q] of [[-dx, x0 - B[0]], [dx, B[2] - x0], [-dy, y0 - B[1]], [dy, B[3] - y0]]) {
+      if (p === 0) { if (q < 0) return false; continue; }
+      const r = q / p;
+      if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; }
+    }
+    return true;
+  }
+  // Does a label box (plus a 2 px margin) touch a lake that is drawn at this zoom? Every lake whose bounds meet the box
+  // is tested exactly: a shore segment inside or crossing the box, or the box inside the lake. Thin lakes (Thun,
+  // Brienz, Neuchatel) cannot slip between samples.
   function overLake(b, wz) {
-    if (!W.lakeAt) return false;
-    const LL = Math.min(NLEV - 1, W.lakeLevels.length - 1);
-    for (let j = 0; j <= 2; j++) for (let i = 0; i <= 8; i++) {
-      const w = cssToWorld(b[0] - 2 + (b[2] - b[0] + 4) * i / 8, b[1] - 2 + (b[3] - b[1] + 4) * j / 2);
-      if (W.lakeAt(lonOfX(w.x), latOfY(w.y), LL, wz + 1) >= 0) return true;
+    if (!W.lakeRings) return false;
+    const R = W.lakeRings(W.lakeLevels.length - 1);
+    const B = boxLL([b[0] - 2, b[1] - 2, b[2] + 2, b[3] + 2]);
+    const cx = (B[0] + B[2]) / 2, cy = (B[1] + B[3]) / 2;
+    for (let k = 0; k < R.length; k++) {
+      if (W.lakes[k].minZoom > wz + 1) continue;
+      for (const r of R[k]) {
+        if (r.s > B[3] || r.n < B[1]) continue;
+        for (const sh of [0, 360, -360]) {
+          if (r.e + sh < B[0] || r.w + sh > B[2]) continue;
+          const c = r.c;
+          for (let i = 2; i < c.length; i += 2) if (segInBox(c[i - 2] + sh, c[i - 1], c[i] + sh, c[i + 1], B)) return true;
+          if (ringInRing(c, cx - sh, cy)) return true;
+        }
+      }
     }
     return false;
+  }
+  // Is a country label's text box mostly on that country? 7 x 3 samples: it is placed when at least half of them are on
+  // the country, or (labels partly over the sea, as for island nations) when none is on another country and at least
+  // 30 % are on its own; so CHILE is not written over Argentina, nor HAITI across the Dominican Republic.
+  function labelFits(b, ci, L) {
+    const rs = W.countryRings(L)[ci];
+    let own = 0, other = 0;
+    for (let j = 0; j < 3; j++) for (let i = 0; i < 7; i++) {
+      const w = cssToWorld(b[0] + (b[2] - b[0]) * (i + 0.5) / 7, b[1] + (b[3] - b[1]) * (j + 0.5) / 3);
+      if (w.y < 0 || w.y > 1) continue;
+      const lon = normLon(lonOfX(w.x)), lat = latOfY(w.y);
+      if (inRingsLL(rs, lon, lat)) own++;
+      else if (W.countryAt(lon, lat, L) >= 0) { if (++other > 3) return false; }
+    }
+    return own >= 11 || (other === 0 && own >= 7);
   }
   function updateLabels() {
     const key = [view.cx, view.cy, view.z, size.cssW, size.cssH, size.devW, pinMode, pinsVer, layout.s0, layout.ax, layout.ay].join(',');
@@ -2632,8 +3040,8 @@ var earcut = (function () {
     // 1) pins: reserve their markers, then their names (newest first), right of the head or else left of it
     const pl = [];
     for (const p of pins) {
-      const [x, y] = lonLatToCss(p.lon, p.lat);
-      if (x < -10 || x > Wc + 10 || y < 0 || y > Hc + 20 || !inWorldX(x) || p.lat >= MAXLAT || p.lat <= -MAXLAT) continue;
+      const [x, y] = pinXY(p);
+      if (x < -10 || x > Wc + 10 || y < 0 || y > Hc + 20 || !inWorldX(x)) continue;
       pl.push([x, y, p]);
       boxes.push([x - 7.5, y - PIN_HEAD - 8, x + 7.5, y + 3]);
     }
@@ -2652,30 +3060,33 @@ var earcut = (function () {
     }
 
     // 2) countries, most important first; skipped where the label would swamp a small country (no island clutter),
-    //    where the country fills the screen anyway, or (zoomed in) where it would run across a lake
+    //    where the country fills the screen anyway, where the text would lie on another country or on a lake (then a
+    //    nearby position is tried). On small screens (a small whole-world view) the top-ranked few still show, smaller.
     if (!mainSize) countrySizes();
     const cands = [];
-    for (const c of W.countries) if (c.labelPt && c.minLabel <= wz - 0.1) cands.push(c);
+    const wzG = Math.max(wz, Math.min(wz + 0.6, 2.0)), fsAdj = clamp((wz - 2.0) * 2.5, -2, 0);
+    for (const c of W.countries) if (c.labelPt && c.minLabel <= wzG - 0.1) cands.push(c);
     cands.sort((a, b) => a.labelRank - b.labelRank || a.minLabel - b.minLabel);
-    const big = Math.max(Wc, Hc);
+    const big = Math.max(Wc, Hc), LS = Math.min(wantLevel(view), 2);
     for (const c of cands) {
       const [x, y] = lonLatToCss(c.labelPt[0], c.labelPt[1]);
-      if (x < 0 || x > Wc || y < 0 || y > Hc || !inWorldX(x)) continue;
+      if (x < 0 || x > Wc || y < 0 || y > Hc || !inWorld(x, y)) continue;
       const msz = mainSize[c.i] * s;
       if (msz > 1.6 * big) continue;
       const rank = c.labelRank;
-      const fs = Math.round(((rank <= 2 ? 12 : rank <= 3 ? 11 : 10) + clamp((wz - 3.3) * 1.4, 0, 5)) * 2) / 2;
+      const fs = Math.max(9, Math.round(((rank <= 2 ? 12 : rank <= 3 ? 11 : 10) + clamp((wz - 3.3) * 1.4, 0, 5) + fsAdj) * 2) / 2);
       const text = (wz < 4.6 && c.label.length <= c.name.length ? c.label : c.name).toUpperCase();
       const ls = Math.round(fs * 0.16 * 100) / 100;
       const w = textW(text, '600 ' + fs + 'px ' + LFONT, ls) - ls;
       if (msz < Math.min(w * 0.7, 160)) continue;
-      // at the label point, or (zoomed in, when that covers a lake) nudged a line up or down
-      let b = null, yy = y;
-      for (const dy of view.z >= 6 ? [0, -1.5 * fs, 1.5 * fs, -3 * fs, 3 * fs] : [0]) {
-        const c2 = [x - w / 2 - 4, y + dy - fs * 0.72, x + w / 2 + 4, y + dy + fs * 0.72];
-        if (!onScr(c2) || hit(c2)) continue;
-        if (view.z >= 6 && overLake(c2, wz)) continue;
-        b = c2; yy = y + dy; break;
+      // at the label point, else nudged up or down a line or sideways
+      let b = null, xx = x, yy = y;
+      for (const [dx, dy] of [[0, 0], [0, -1.5 * fs], [0, 1.5 * fs], [-0.3 * w, 0], [0.3 * w, 0], [0, -3 * fs], [0, 3 * fs]]) {
+        const c2 = [x + dx - w / 2 - 4, y + dy - fs * 0.72, x + dx + w / 2 + 4, y + dy + fs * 0.72];
+        if (!onScr(c2) || hit(c2) || !inWorld(x + dx, y + dy)) continue;
+        if (view.z >= 4 && overLake(c2, wz)) continue;
+        if (!labelFits([x + dx - w / 2, y + dy - fs * 0.36, x + dx + w / 2, y + dy + fs * 0.36], c.i, LS)) continue;
+        b = c2; xx = x + dx; yy = y + dy; break;
       }
       if (!b) continue;
       boxes.push(b);
@@ -2684,7 +3095,7 @@ var earcut = (function () {
       const fz = fs + 'px', lz = ls + 'px';
       if (el.style.fontSize !== fz) el.style.fontSize = fz;
       if (el.style.letterSpacing !== lz) el.style.letterSpacing = lz;
-      el.style.transform = 'translate(' + snap(x - w / 2) + 'px,' + snap(yy - fs / 2) + 'px)';
+      el.style.transform = 'translate(' + snap(xx - w / 2) + 'px,' + snap(yy - fs / 2) + 'px)';
     }
 
     // 3) cities by importance, once zoomed in; a pinned place shows its pin name instead
@@ -2695,7 +3106,7 @@ var earcut = (function () {
       for (let i = 0; i < P.n && n.lbl < maxN; i++) {
         if (P.minZoom[i] > lim) continue;
         const [x, y] = lonLatToCss(P.lon[i], P.lat[i]);
-        if (x < 8 || y < 10 || x > Wc - 8 || y > bottom - 9 || !inWorldX(x)) continue;
+        if (x < 8 || y < 10 || x > Wc - 8 || y > bottom - 9 || !inWorld(x, y)) continue;
         const name = P.name[i], lc = name.toLowerCase();
         if (pinNames.some((q) => q[0] === lc && Math.abs(q[1] - x) + Math.abs(q[2] - y) < 90)) continue;
         const cap = P.cls[i] === CAPITAL;
@@ -2714,6 +3125,22 @@ var earcut = (function () {
     for (const kind in pools) for (let k = n[kind]; k < pools[kind].length; k++) if (pools[kind][k].style.display !== 'none') pools[kind][k].style.display = 'none';
     if (labelsHidden) { labelsEl.classList.remove('moving'); labelsHidden = false; }
     orderPins();
+    updateLostHint(n.cl + n.lbl + n.plbl === 0);
+  }
+  // Zoomed in (8x or more) with no land, label or pin on screen: the globe button shows a hint ("lost at sea").
+  let lostOn = false;
+  function updateLostHint(empty) {
+    let lost = empty && view.z >= 8;
+    for (let j = 0; j < 5 && lost; j++) for (let i = 0; i < 8; i++) {
+      const w = cssToWorld(size.cssW * (i + 0.5) / 8, (size.cssH - (CONFIG.taskbarPx || 0)) * (j + 0.5) / 5);
+      if (w.y < 0 || w.y > 1) continue;
+      if (W.countryAt(normLon(lonOfX(w.x)), latOfY(w.y), 0) >= 0) { lost = false; break; }
+    }
+    if (lost !== lostOn) {
+      lostOn = lost;
+      bHome.classList.toggle('hint', lost);
+      bHome.dataset.tip = lost ? 'Open sea: click here for the whole world' : 'Whole world';
+    }
   }
 
   /* ---------- card ---------- */
@@ -2740,9 +3167,24 @@ var earcut = (function () {
     hideTip();
     positionOverlays();
     updateDim();
+    armCardClose();
   }
+  // A card opened by an accidental click does not stay on the resting wallpaper: it closes after 30 s without movement.
+  let cardTimer = 0;
+  function armCardClose() {
+    clearTimeout(cardTimer);
+    cardTimer = setTimeout(function check() {
+      cardTimer = 0;
+      if (!selectedId) return;
+      const left = 30000 - (performance.now() - Math.max(lastMoveT, cardOpenedT));
+      if (left > 50) cardTimer = setTimeout(check, left); else closeCard();
+    }, 30000);
+    cardOpenedT = performance.now();
+  }
+  let cardOpenedT = 0;
   function closeCard() {
     if (!selectedId && card.hidden) return;
+    clearTimeout(cardTimer); cardTimer = 0;
     selectedId = null;
     card.hidden = true;
     positionOverlays();
@@ -2760,7 +3202,7 @@ var earcut = (function () {
   function placeCard() {
     const p = pins.find((q) => q.id === selectedId);
     if (!p) { closeCard(); return; }
-    const [x, y] = lonLatToCss(p.lon, p.lat);
+    const [x, y] = pinXY(p);
     if (x < 0 || y < 0 || x > size.cssW || y > size.cssH || !inWorldX(x)) { card.style.visibility = 'hidden'; return; }
     card.style.visibility = '';
     const w = card.offsetWidth, h = card.offsetHeight, hy = y - PIN_HEAD;
@@ -2769,7 +3211,7 @@ var earcut = (function () {
     const cands = [['pr', x + 20, hy - h / 2], ['pl', x - 20 - w, hy - h / 2], ['pa', x - w / 2, hy - 18 - h], ['pb', x - w / 2, y + 14]];
     let best = null, bs = Infinity;
     for (const [side, l0, t0] of cands) {
-      const l = clamp(l0, 12, Wc - w - 12), t = clamp(t0, 12, Hc - h - 12);
+      const l = clamp(l0, 12, Wc - w - 12), t = clamp(t0, 12, Math.max(12, Hc - (CONFIG.taskbarPx || 0) - h - 8));
       let sc = (Math.abs(l - l0) + Math.abs(t - t0)) * 2;
       for (const r of obs) sc += overlapArea(l, t, w, h, r);
       sc += overlapArea(l, t, w, h, pinBox) * 50;
@@ -2787,7 +3229,7 @@ var earcut = (function () {
     if (!p) return;
     const tv = targetView();
     const z = clamp(Math.max(8, tv.z * 4), 1, maxZoom());
-    animateTo({ cx: xOfLon(normLon(p.lon)), cy: mercY(p.lat), z }, { dur: 450 });
+    animateTo({ cx: xOfLon(normLon(p.lon)), cy: mercY(clamp(p.lat, -PIN_LAT, PIN_LAT)), z }, { dur: 450 });
   });
   cRemove.addEventListener('click', () => {
     if (!selectedId) return;
@@ -2819,20 +3261,33 @@ var earcut = (function () {
   function hideTip() { if (tipOn) { tip.classList.remove('on'); tipOn = false; } }
   // Tooltip beside the cursor, choosing the corner that keeps it off the HUD, the toolbar and stats, the banner, an
   // open card, the taskbar band and the screen edges (and never under the cursor itself).
+  // When every corner next to the cursor would cover the HUD (or another obstacle), positions just clear of each
+  // obstacle are tried as well, further from the cursor: the tooltip never covers the clock or the calendar if any
+  // position on screen avoids them.
   function placeTip() {
     const w = tipW, h = tipH, mx = mouse.x, my = mouse.y, Wc = size.cssW, Hc = size.cssH;
     const obs = obstacleRects().map((r) => ({ left: r.left - 6, top: r.top - 6, right: r.right + 6, bottom: r.bottom + 6 }));
     if (!card.hidden) obs.push(rectOf(card));
     obs.push({ left: -1e4, top: Hc - (CONFIG.taskbarPx || 0), right: 1e5, bottom: 1e5 });
-    const cands = [[mx + 16, my + 20], [mx - w - 14, my + 20], [mx + 16, my - h - 14], [mx - w - 14, my - h - 14]];
-    let best = cands[0], bs = Infinity;
-    for (const [x0, y0] of cands) {
+    const base = [[mx + 16, my + 20], [mx - w - 14, my + 20], [mx + 16, my - h - 14], [mx - w - 14, my - h - 14]];
+    const score = (x0, y0) => {
       const x = clamp(x0, 8, Wc - w - 8), y = clamp(y0, 8, Hc - h - 8);
-      let sc = Math.abs(x - x0) + Math.abs(y - y0);
+      let sc = 0;
       if (mx >= x - 4 && mx <= x + w + 4 && my >= y - 4 && my <= y + h + 4) sc += 1e7;
       for (const r of obs) sc += overlapArea(x, y, w, h, r) * 4;
-      if (sc < bs) { bs = sc; best = [x, y]; if (sc === 0) break; }
+      // distance from the cursor beyond the usual offset
+      const dx = Math.max(0, x - mx - 18, mx - (x + w) - 18), dy = Math.max(0, y - my - 22, my - (y + h) - 16);
+      return [sc + dx + dy, x, y];
+    };
+    let best = null;
+    for (const [x0, y0] of base) { const r = score(x0, y0); if (!best || r[0] < best[0]) best = r; if (r[0] === 0) break; }
+    if (best[0] >= 1) {
+      for (const o of obs) for (const [x0, y0] of base) for (const [x1, y1] of [[o.left - w - 2, y0], [o.right + 2, y0], [x0, o.top - h - 2], [x0, o.bottom + 2]]) {
+        const r = score(x1, y1);
+        if (r[0] < best[0]) best = r;
+      }
     }
+    best = [best[1], best[2]];
     tip.style.transform = 'translate(' + Math.round(best[0]) + 'px,' + Math.round(best[1]) + 'px)';
   }
 
@@ -2844,7 +3299,7 @@ var earcut = (function () {
     bPin.setAttribute('aria-pressed', String(pinMode));
     bPin.setAttribute('aria-label', pinMode ? 'Done: turn pin mode off' : 'Pin mode');
     bPinText.textContent = pinMode ? 'Done' : 'Pin';
-    lastDesc = null;
+    descCache = null;
     closeCard();
     armPinTimeout();
     labelKey = '';
@@ -2858,20 +3313,30 @@ var earcut = (function () {
   }
 
   /* ---------- hover (mouse movement is forwarded by Lively) ---------- */
-  const mouse = { x: -1, y: -1, onMap: false };
-  let lastDesc = null;
+  // mouse.pin: the pin element under the cursor (its tooltip stays up while the cursor is on it); mouse.body: on its body
+  const mouse = { x: -1, y: -1, onMap: false, pin: null, body: false };
+  const dropTip = (d) => '<span class="plus">+</span>' + esc(d.name) + '<small>click to drop a pin here</small>';
+  function pinTip() {
+    const el = mouse.pin, p = el && pins.find((q) => q.id === el.dataset.id);
+    if (!p || el._h) { mouse.pin = null; hideTip(); return; }
+    setHover(-1);
+    // in pin mode the body of a pin shows what a click there does: open this pin, or drop the nearby place
+    const tg = pinMode && mouse.body ? pinTarget(mouse.x, mouse.y, p.id) : null;
+    if (tg && !tg.open) { showTip(dropTip(tg.d)); return; }
+    showTip(esc(p.name) + '<small>' + (p.added ? 'Added ' + esc(fmtDate(p.added)) + ' \u00b7 ' : '') + 'click for details</small>');
+  }
   function updateHover() {
-    if (!mouse.onMap || anim || !inWorldX(mouse.x)) { setHover(-1); if (!mouse.onMap || !inWorldX(mouse.x)) hideTip(); return; }
+    if (mouse.pin) { if (anim) { setHover(-1); hideTip(); } else pinTip(); return; }
+    const inW = mouse.onMap && inWorld(mouse.x, mouse.y);
+    if (!inW || anim) { setHover(-1); if (!inW) hideTip(); return; }
     const w = cssToWorld(mouse.x, mouse.y);
-    if (w.y < 0 || w.y > 1) { setHover(-1); hideTip(); return; }
-    const lon = normLon(lonOfX(w.x)), lat = latOfY(w.y);
-    const ci = W.countryAt(lon, lat);
+    const ci = W.countryAt(normLon(lonOfX(w.x)), latOfY(w.y));
     setHover(ci);
     if (pinMode) {
-      if (!lastDesc || Math.abs(lastDesc.x - mouse.x) + Math.abs(lastDesc.y - mouse.y) > 2) {
-        lastDesc = { x: mouse.x, y: mouse.y, d: W.describe(lon, lat, { radiusKm: radiusKm(lat) }) };
-      }
-      showTip('<span class="plus">+</span>' + esc(tidyName(lastDesc.d.label, lastDesc.d.country)) + '<small>click to drop a pin here</small>');
+      const tg = pinTarget(mouse.x, mouse.y, null);
+      if (!tg) hideTip();
+      else if (tg.open) { const p = pins.find((q) => q.id === tg.open); showTip(esc(p.name) + '<small>click for details</small>'); }
+      else showTip(dropTip(tg.d));
     } else if (ci >= 0) showTip(esc(W.countries[ci].name));
     else hideTip();
   }
@@ -2909,11 +3374,13 @@ var earcut = (function () {
     if (!(CONFIG.hoverHideSec > 0)) return;
     hoverTimer = setTimeout(() => {
       hoverTimer = 0;
-      mouse.onMap = false;
+      mouse.onMap = false; mouse.pin = null; mouse.body = false;
+      mouse.x = mouse.y = -1e4;                          // the cursor has left: the toolbar dims back as well
       setHover(-1, true);
       hideTip();
       idleHidden = true;
       document.body.classList.add('idle');
+      updateDim();
       if (renderer === 'webgl2' && !visited.size) setTimeout(() => { if (hoverCi < 0 && !visited.size) GLR.trimDyn(); }, 200);
     }, CONFIG.hoverHideSec * 1000);
   }
@@ -2930,7 +3397,7 @@ var earcut = (function () {
 
   /* ---------- input ---------- */
   const isMapTarget = (t) => t === glCanvas || t === c2dCanvas;
-  let drag = null, suppressClick = false, lastClick = null, lastDpr = devicePixelRatio || 1;
+  let drag = null, suppressClick = false, lastClick = null, lastDpr = devicePixelRatio || 1, lastMoveT = 0, hintShown = false;
   document.addEventListener('mousemove', (e) => {
     mouse.x = e.clientX; mouse.y = e.clientY;
     if ((devicePixelRatio || 1) !== lastDpr) measure();       // a DPR-only change (e.g. moved to another monitor)
@@ -2938,9 +3405,19 @@ var earcut = (function () {
     armHoverHide();
     const onMap = isMapTarget(e.target);
     mouse.onMap = onMap;
+    lastMoveT = performance.now();
+    const pinEl = !onMap && e.target.closest ? e.target.closest('.pin') : null;
+    mouse.pin = pinEl; mouse.body = !!pinEl && e.target.classList.contains('pb');
     if (drag && (e.buttons & 1)) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 6) { drag.moved = true; hideTip(); setHover(-1); labelsMoving(); }
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 6) {
+        drag.moved = true;
+        // No drag-pan while the world is narrower than the screen (around the whole-world view): it would turn the single
+        // drawn copy and slice continents, and the resting wallpaper never moves from stray input.
+        drag.locked = scaleOf(targetView()) < size.cssW;
+        if (!drag.locked) { hideTip(); setHover(-1); labelsMoving(); }
+      }
+      if (drag.moved && drag.locked) return;
       if (drag.moved) {
         const s = scaleOf(view);
         anim = null;
@@ -2949,19 +3426,19 @@ var earcut = (function () {
         return;
       }
     }
-    if (onMap) updateHover();
-    else if (!e.target.closest || !e.target.closest('.pin')) { setHover(-1); hideTip(); }
+    if (onMap || pinEl) updateHover();
+    else { setHover(-1); hideTip(); }
     if (tipOn) placeTip();
     updateDim();
   }, { passive: true });
-  document.documentElement.addEventListener('mouseleave', () => { mouse.onMap = false; mouse.x = mouse.y = -1e4; setHover(-1, true); hideTip(); updateDim(); });
+  document.documentElement.addEventListener('mouseleave', () => { mouse.onMap = false; mouse.pin = null; mouse.x = mouse.y = -1e4; setHover(-1, true); hideTip(); updateDim(); });
   // Drag to pan is an extra for normal browsers; in Lively a click never moves far enough to start one.
   function onDown(e) {
     if (e.button !== 0) return;
     drag = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy, moved: false };
   }
   function onUp() {
-    if (drag && drag.moved) { suppressClick = true; normalizeView(); afterSettle(); }
+    if (drag && drag.moved) { suppressClick = true; if (!drag.locked) { normalizeView(); afterSettle(); } }
     drag = null;
   }
   glCanvas.addEventListener('mousedown', onDown);
@@ -2971,21 +3448,27 @@ var earcut = (function () {
     if (suppressClick) { suppressClick = false; return; }
     if (!xPanel.hidden) { closeExport(); return; }
     if (selectedId) { closeCard(); return; }
-    if (!inWorldX(e.clientX)) return;                 // beside the single world copy (under the HUD column at 1x)
-    if (pinMode) { dropPinAt(e.clientX, e.clientY); lastClick = null; return; }
+    if (!inWorld(e.clientX, e.clientY)) return;      // beside the single world copy (under the HUD column at 1x) or below its crop
+    if (pinMode) { pinModeClick(e, null); lastClick = null; return; }
     const tv = targetView();
-    // The resting wallpaper never moves from a stray desktop click: at the whole-world view normal clicks do nothing.
-    if (CONFIG.ignoreClicksAtWorldView && tv.z <= 1 + 1e-6) return;
+    // The resting wallpaper never moves from a stray desktop click: at the whole-world view normal clicks do nothing
+    // (the first such click in a session explains how to zoom in or pin).
+    if (CONFIG.ignoreClicksAtWorldView && tv.z <= 1 + 1e-6) {
+      if (!hintShown) { hintShown = true; toast('Use <b>+</b> to zoom in, or <b>Pin</b> to drop a pin'); }
+      return;
+    }
     const now = performance.now();
     if (CONFIG.doubleClickZoom && lastClick && now - lastClick.t < 400 && Math.abs(e.clientX - lastClick.x) + Math.abs(e.clientY - lastClick.y) < 12) {
       animateTo({ cx: lastClick.w.x, cy: lastClick.w.y, z: clamp(zoomStep(tv.z, 1), 1, maxZoom()) }, { dur: 440 });
       lastClick = null;
       return;
     }
-    // Zoomed in: a click glides the map so that point becomes the centre.
+    // Zoomed in: a click glides the map so that point becomes the centre (while the whole world is still narrower than
+    // the screen, e.g. with ?ignoreclicks=0 at 1x, it also zooms in one step, so the single world copy is not turned).
     const w = cssToWorld(e.clientX, e.clientY);
     lastClick = { t: now, x: e.clientX, y: e.clientY, w };
-    animateTo({ cx: w.x, cy: w.y, z: tv.z }, { dur: 420 });
+    const z = scaleOf(tv) < size.cssW ? clamp(zoomStep(tv.z, 1), 1, maxZoom()) : tv.z;
+    animateTo({ cx: w.x, cy: w.y, z }, { dur: 420 });
   }
   glCanvas.addEventListener('click', onMapClick);
   c2dCanvas.addEventListener('click', onMapClick);
@@ -3084,7 +3567,7 @@ var earcut = (function () {
   function relayout(atHome) {
     computeLayout();
     view = atHome ? homeView() : clampView(view);
-    lastDesc = null;
+    descCache = null;
     labelKey = '';
     zoomButtons();
     updateDim();
@@ -3134,7 +3617,11 @@ var earcut = (function () {
     const r = c.getBoundingClientRect();
     if (r.width > 0 && (Math.abs(Math.round(r.width * dpr) - size.devW) > 1 || Math.abs(Math.round(r.height * dpr) - size.devH) > 1)) { dpBox = null; measure(); return; }
     const h = rectOf(hudEl);
-    if (Math.abs(h.left - rects.hud.left) > 1 || Math.abs(h.bottom - rects.hud.bottom) > 1) relayout(isHome());
+    if (Math.abs(h.left - rects.hud.left) > 1 || Math.abs(h.bottom - rects.hud.bottom) > 1) {
+      const atHome = isHome(), was = [layout.s0, layout.ax, layout.ay, layout.cyHome].join(',');
+      computeLayout();                     // the column is sized from its widest content, so usually nothing moves
+      if ([layout.s0, layout.ax, layout.ay, layout.cyHome].join(',') !== was) relayout(atHome);
+    }
   }
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -3169,7 +3656,7 @@ var earcut = (function () {
       return { hover: hoverCi, hoverName: hoverCi >= 0 ? W.countries[hoverCi].name : '', undo: undoStack.length, size: Object.assign({}, size), layout: Object.assign({}, layout), gpu: renderer === 'webgl2' ? GLR.stats() : null, myPinsBroken, storeRecovered, labels: { cl: pools.cl.filter((e) => e.style.display !== 'none').map((e) => e.textContent), lbl: pools.lbl.filter((e) => e.style.display !== 'none').map((e) => e.textContent), plbl: pools.plbl.filter((e) => e.style.display !== 'none').map((e) => e.textContent) } };
     },
     setView(lon, lat, z) { setView({ cx: xOfLon(lon), cy: mercY(lat), z: z || view.z }); afterSettle(); },
-    setColor(name, h, a) { C[name] = hex(h, a); GLR.invalidate(); requestFrame(); },
+    setColor(name, h, a) { C[name] = hex(h, a); GLR.invalidate(); C2D.invalidate(); requestFrame(); },
     get renderer() { return renderer; },
     timings: {}
   };
