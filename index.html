@@ -53,35 +53,35 @@
   }
   #date {
     margin-top: 10px;
-    font-size: clamp(13px, 1.05vw, 19px);
+    font-size: clamp(11.5px, 0.95vw, 17px);
     color: var(--muted);
-    letter-spacing: 0.12em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     text-align: right;
   }
 
   #cal {
-    width: clamp(240px, 16vw, 320px);
-    padding: 16px 18px 16px;
+    width: clamp(176px, 12vw, 250px);
+    padding: 11px 13px 11px;
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 18px;
+    border-radius: 14px;
     text-shadow: none;
   }
   #cal header {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    margin-bottom: 12px;
+    margin-bottom: 7px;
   }
-  #month { font-size: clamp(15px, 1.1vw, 19px); font-weight: 600; letter-spacing: 0.02em; }
-  #year { font-size: clamp(12px, 0.85vw, 15px); color: var(--muted); letter-spacing: 0.08em; }
+  #month { font-size: clamp(12.5px, 0.95vw, 16px); font-weight: 600; letter-spacing: 0.02em; }
+  #year { font-size: clamp(10px, 0.72vw, 12.5px); color: var(--muted); letter-spacing: 0.08em; }
   #grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    row-gap: 3px;
+    row-gap: 1px;
     text-align: center;
-    font-size: clamp(12px, 0.82vw, 15px);
+    font-size: clamp(10px, 0.68vw, 12.5px);
     font-variant-numeric: tabular-nums;
   }
   .dow {
@@ -89,7 +89,7 @@
     font-size: 0.72em;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    padding-bottom: 6px;
+    padding-bottom: 4px;
   }
   .day {
     aspect-ratio: 1;
@@ -190,6 +190,11 @@
   @keyframes drop { from { transform: translateY(-16px) scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
   @keyframes ripple { from { opacity: 0.8; transform: scale(0.2); } to { opacity: 0; transform: scale(1); } }
   .pin .rp { transform-box: fill-box; transform-origin: center; }
+  /* zoomed out (whole-world view): smaller markers, scaled about the tip so they still point at the place */
+  #pins.small .pin svg { scale: 0.62; transform-origin: 12px 30px; }
+  #pins.small .pin .ph { scale: 0.62; transform-origin: 9px 26px; }
+  body.pinmode #pins.small .pin .ph { transform-origin: 6.5px 23.5px; }
+  #pins.small .pin .pb { scale: 0.62; transform-origin: 7px 15px; }
 
   #tip {
     position: fixed; left: 0; top: 0; z-index: 6;
@@ -221,7 +226,7 @@
     width: max-content; max-width: 100%;
     padding-right: 6px; box-sizing: border-box;
     text-align: right;
-    font-size: 12.5px; line-height: 1.45;
+    font-size: 11px; line-height: 1.4;
     color: rgba(46, 30, 14, 0.85);
     letter-spacing: 0.06em;
     -webkit-text-stroke: 3px rgba(240, 228, 198, 0.9);
@@ -236,38 +241,38 @@
   #dock {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 5px;
+    gap: 2px;
+    padding: 3px;
     background: rgba(243, 233, 208, 0.94);
     border: 1px solid var(--line);
-    border-radius: 16px;
+    border-radius: 12px;
     box-shadow: 0 4px 14px rgba(60, 40, 15, 0.25);
     transition: opacity 0.3s;
   }
   body.dim #dock { opacity: 0.5; }
-  .sep { width: 1px; height: 22px; background: rgba(107, 74, 42, 0.35); margin: 0 3px; }
+  .sep { width: 1px; height: 17px; background: rgba(107, 74, 42, 0.35); margin: 0 3px; }
   .btn {
     position: relative;
-    width: 42px; height: 42px;
+    width: 34px; height: 34px;
     display: grid; place-items: center;
     padding: 0; margin: 0;
-    border: 0; border-radius: 11px;
+    border: 0; border-radius: 9px;
     background: transparent;
     color: var(--text);
-    font: 600 13.5px "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+    font: 600 12px "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
     letter-spacing: 0.02em;
     cursor: pointer;
     transition: background 0.15s, color 0.15s, box-shadow 0.15s;
   }
-  .btn svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .btn:hover { background: rgba(107, 74, 42, 0.12); }
   .btn:active { background: rgba(107, 74, 42, 0.2); }
   .btn:disabled { cursor: default; background: transparent; }
   .btn:disabled svg { opacity: 0.32; }
   .btn:focus { outline: none; }
   .btn:focus-visible { box-shadow: 0 0 0 2px rgba(142, 42, 30, 0.6); }
-  #bPin { width: 80px; display: flex; justify-content: center; gap: 6px; padding: 0 10px 0 8px; }
-  #bPin svg { width: 19px; height: 19px; flex: none; }
+  #bPin { width: 64px; display: flex; justify-content: center; gap: 4px; padding: 0 8px 0 6px; }
+  #bPin svg { width: 16px; height: 16px; flex: none; }
   #bPin[aria-pressed="true"] {
     background: var(--accent);
     color: #f6ecd4;
@@ -1322,6 +1327,8 @@ var earcut = (function () {
   const PI = Math.PI, RAD = PI / 180;
   const MAXLAT = 85.0511287798066;
   const PIN_HEAD = 17;            // css px from a pin's tip (the place itself) up to the centre of its head
+  const PIN_SMALL = 0.62, PIN_SMALL_BELOW_Z = 1.9;   // markers shrink to 62 % while zoomed out near the whole-world view
+  const pinK = () => (view.z < PIN_SMALL_BELOW_Z ? PIN_SMALL : 1);
 
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   // A button that ignores the second click of a double click: by its click count, or (should the host not report one)
@@ -1501,7 +1508,7 @@ var earcut = (function () {
   function computeLayout() {
     readRects();
     const Wc = size.cssW, Hc = size.cssH, hud = rects.hud;
-    const m = Math.max(20, Math.round(Math.min(Wc, Hc) * 0.035));
+    const m = Math.max(16, Math.round(Math.min(Wc, Hc) * 0.025));
     const tb = CONFIG.taskbarPx || 0, xL = Math.max(m, CONFIG.iconColumnPx || 0);
     const hudL = hud.width ? Math.min(hud.left, hud.right - hudWidestWidth()) : Wc;
     const uiLow = placeUi(hudL, m);     // short screens: the toolbar sits at the bottom, left of the HUD column
@@ -1523,8 +1530,17 @@ var earcut = (function () {
     if (hud.width) right = Math.min(right, hudL);
     if (ui.width && !uiLow) right = Math.min(right, ui.left);
     const side = fit({ mode: 'side', x0: xL, x1: right - m, y0: m, y1: Math.min(Hc - tb, uiLow ? ui.top : Hc) - m }, [[mT, 0]].concat(pinTop), [[mB, 0]].concat(pinBot));
+    // The toolbar only occupies the bottom-right corner: when the world is wider-than-tall limited, a rectangle that
+    // reaches across to the HUD column but ends above the toolbar usually holds a bigger world. Everything drawn at the
+    // home view (85N down to the crop) must then fit above the toolbar, so nothing ends up behind it.
+    let sideTall = { s: 0 };
+    if (ui.width && !uiLow && hud.width && ui.left < hudL) {
+      sideTall = fit({ mode: 'side', x0: xL, x1: hudL - m, y0: m, y1: Math.min(Hc - tb, ui.top) - m }, [[cT, 0]].concat(pinTop), [[cB, 0]].concat(pinBot));
+      if (sideTall.s && (cB - cT) * sideTall.s > sideTall.Hu) sideTall = { s: 0 };
+    }
+    const sideBest = sideTall.s > side.s ? sideTall : side;
     const band = hud.width ? fit({ mode: 'band', x0: xL, x1: Wc - m, y0: hud.bottom + m, y1: Math.min(Hc - tb, ui.width ? ui.top : Hc) - m }, [[cT, 0]].concat(pinTop), [[cB, 0]].concat(pinBot)) : { s: 0 };
-    let u = band.s > side.s * 1.05 ? band : side;
+    let u = band.s > sideBest.s * 1.05 ? band : sideBest;
     if (!u.s) u = fit({ mode: 'full', x0: m, x1: Wc - m, y0: m, y1: Math.max(m + 120, Hc - tb - m) }, [[mT, 0]].concat(pinTop), [[mB, 0]].concat(pinBot));   // tiny windows
     const s0 = Math.max(1, u.s || u.Wu), Hu = u.Hu, ay = (u.y0 + u.y1) / 2;
     let cy;
@@ -3158,6 +3174,8 @@ var earcut = (function () {
   });
 
   function positionOverlays() {
+    const small = pinK() < 1;
+    if (pinsLayer._small !== small) { pinsLayer.classList.toggle('small', small); pinsLayer._small = small; }
     const dpr = size.devW / size.cssW;
     const snap = (v) => Math.round(v * dpr) / dpr;
     for (const p of pins) {
@@ -3348,25 +3366,29 @@ var earcut = (function () {
     const n = { cl: 0, lbl: 0, plbl: 0 };
 
     // 1) pins: reserve their markers, then their names (newest first), right of the head or else left of it
+    const pk = pinK();
     const pl = [];
     for (const p of pins) {
       const [x, y] = pinXY(p);
       if (x < -10 || x > Wc + 10 || y < 0 || y > Hc + 20 || !inWorld(x, y)) continue;
       pl.push([x, y, p]);
-      boxes.push([x - 7.5, y - PIN_HEAD - 8, x + 7.5, y + (pinBelow(p) ? 9 : 3)]);
+      boxes.push([x - 7.5 * pk, y - (PIN_HEAD + 8) * pk, x + 7.5 * pk, y + (pinBelow(p) ? 9 : 3)]);
     }
     const pinNames = [];
-    const PF = '600 12.5px ' + LFONT;
+    const pfs = pk < 1 ? 11 : 12.5, PF = '600 ' + pfs + 'px ' + LFONT;
     for (let i = pl.length - 1; i >= 0 && n.plbl < 80; i--) {
       const [x, y, p] = pl[i], t = shortName(p), w = textW(t, PF, 0.125);
-      const hy = y - PIN_HEAD;
+      const hy = y - PIN_HEAD * pk;
       if (p.id === selectedId) { pinNames.push([t.toLowerCase(), x, y]); continue; }   // its open card shows the name
-      let b = [x + 9, hy - 9, x + 13 + w, hy + 9], left = false;
-      if (!onScr(b) || hit(b)) { b = [x - 13 - w, hy - 9, x - 9, hy + 9]; left = true; if (!onScr(b) || hit(b)) continue; }
+      const g = 9 * pk + 1;
+      let b = [x + g, hy - 9, x + g + 4 + w, hy + 9], left = false;
+      if (!onScr(b) || hit(b)) { b = [x - g - 4 - w, hy - 9, x - g, hy + 9]; left = true; if (!onScr(b) || hit(b)) continue; }
       boxes.push(b);
       const el = poolEl('plbl', n.plbl++);
       setText(el, t);
-      el.style.transform = 'translate(' + snap(left ? x - 11 - w : x + 11) + 'px,' + snap(hy) + 'px)';
+      const fz = pfs + 'px';
+      if (el.style.fontSize !== fz) el.style.fontSize = fz;
+      el.style.transform = 'translate(' + snap(left ? x - g - 2 - w : x + g + 2) + 'px,' + snap(hy) + 'px)';
       pinNames.push([t.toLowerCase(), x, y]);
     }
 
