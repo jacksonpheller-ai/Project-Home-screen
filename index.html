@@ -339,6 +339,9 @@
   .btn:disabled svg { opacity: 0.32; }
   .btn:focus { outline: none; }
   .btn:focus-visible { box-shadow: 0 0 0 2px rgba(142, 42, 30, 0.6); }
+  #bGlobe[aria-pressed="true"] { background: rgba(107, 74, 42, 0.2); }
+  #bGlobe[hidden] { display: none; }
+  body.night #bGlobe[aria-pressed="true"] { background: rgba(236, 220, 184, 0.16); }
   #bPin { width: 64px; display: flex; justify-content: center; gap: 4px; padding: 0 8px 0 6px; }
   #bPin svg { width: 16px; height: 16px; flex: none; }
   #bPin[aria-pressed="true"] {
@@ -560,6 +563,9 @@
     <button class="btn" id="bHome" type="button" data-test="reset" aria-label="Whole world" data-tip="Whole world">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M3.4 12h17.2"/><path d="M12 3.4c2.5 2.3 3.8 5.2 3.8 8.6s-1.3 6.3-3.8 8.6c-2.5-2.3-3.8-5.2-3.8-8.6s1.3-6.3 3.8-8.6z"/></svg>
     </button>
+    <button class="btn" id="bGlobe" type="button" data-test="globe" aria-pressed="false" aria-label="Globe view" data-tip="Globe view">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="5.3"/><path d="M6.2 15.8a8.2 8.2 0 0 0 11.6-11.6"/><path d="M12 18.2v2.6"/><path d="M8.7 20.8h6.6"/></svg>
+    </button>
     <span class="sep"></span>
     <button class="btn tr" id="bExport" type="button" aria-label="Export pins" data-tip="Export pins">
       <svg viewBox="0 0 24 24"><path d="M12 14.5V4"/><path d="M7.8 8.2 12 4l4.2 4.2"/><path d="M5 13.5v5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-5"/></svg>
@@ -693,6 +699,8 @@ const CONFIG = {
   coastGlow: true,         // very faint glow along coastlines
   relief: 1,               // shaded relief (topography) on land: 0 = off, 1 = normal, up to 2 = stronger
   waterLines: true,        // engraved-style lines along the coasts and a lighter band of shallow water (static)
+  globeLon: -40, globeLat: 28,   // where the globe view faces at rest (between the Americas and Europe)
+  globeClickTurn: true,    // in the globe view a click turns the globe to bring that place to the front
   dimControls: true        // the toolbar fades back when the cursor is not near it
 };
 (() => {
@@ -706,7 +714,7 @@ const CONFIG = {
   if (q.has('night')) CONFIG.showNight = q.get('night') === '1';
   if (q.has('theme')) CONFIG.nightMode = q.get('theme');
   if (q.has('ledger')) CONFIG.showLedger = q.get('ledger') === '1';
-  num('relief', 'relief'); bool('water', 'waterLines');
+  num('relief', 'relief'); bool('water', 'waterLines'); num('glon', 'globeLon'); num('glat', 'globeLat');
   bool('ignoreclicks', 'ignoreClicksAtWorldView'); bool('dblzoom', 'doubleClickZoom'); bool('glow', 'coastGlow');
 })();
 
@@ -1707,7 +1715,7 @@ var earcut = (function () {
   const $id = (id) => document.getElementById(id);
   const glCanvas = $id('map'), c2dCanvas = $id('map2d'), pinsLayer = $id('pins'), tip = $id('tip'), hudEl = $id('hud');
   const ledgerEl = $id('ledger');
-  const bPin = $id('bPin'), bPinText = $id('bPinText'), bUndo = $id('bUndo'), bIn = $id('bIn'), bOut = $id('bOut'), bHome = $id('bHome'), bExport = $id('bExport');
+  const bPin = $id('bPin'), bPinText = $id('bPinText'), bUndo = $id('bUndo'), bIn = $id('bIn'), bOut = $id('bOut'), bHome = $id('bHome'), bExport = $id('bExport'), bGlobe = $id('bGlobe');
   const bDone = $id('bDone'), statsEl = $id('stats'), toastEl = $id('toast'), dockEl = $id('dock'), bannerEl = $id('banner');
   const card = $id('card'), cName = $id('cName'), cMeta = $id('cMeta'), cZoom = $id('cZoom'), cRemove = $id('cRemove'), cClose = $id('cClose');
   const xPanel = $id('export'), xText = $id('xText'), xMsg = $id('xMsg'), xCount = $id('xCount'), xCopy = $id('xCopy'), xClose = $id('xClose'), xWarn = $id('xWarn');
@@ -1730,6 +1738,10 @@ var earcut = (function () {
   const PIN_UP = 26, PIN_DOWN = 4, PIN_DOWN_BELOW = 11;   // css px a pin marker reaches above / below its tip (with the arrow)
   const NORECT = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
   let pins = [], tomb = new Map(), pinsVer = 0, clockT = 0;   // the pins (see the pins section)
+  // Globe view: an orthographic globe in the same useful area. The view keeps its shape { cx, cy, z }: cx / cy are the
+  // world x and Mercator y of the place at the centre of the globe, z its zoom (1..GLOBE_MAX).
+  const GLOBE_MAX = 4, GLOBE_LAT_MAX = 80, GLOBE_KEY = 'worldmap.globe.v1', GLOBE_SPLIT = 2.5;   // degrees: longest triangle edge on the globe
+  let globeOn = false, globePref = false;
   const rects = { hud: NORECT, dock: NORECT, stats: NORECT, ui: NORECT };
   function rectOf(el) {
     if (!el) return NORECT;
@@ -1906,6 +1918,7 @@ var earcut = (function () {
   // home view the map glides to the new fit (a smaller world zooms out smoothly; a larger one is set at once); elsewhere
   // the view keeps its absolute scale.
   function refitHome() {
+    if (globeOn) { if (anim) { view = anim.to; anim = null; normalizeView(); } computeLayout(); view = clampView(view); zoomButtons(); return; }
     const atHome = anim ? sameView(anim.to, homeView()) : isHome();
     const s0 = layout.s0, cy = layout.cyHome;
     computeLayout();
@@ -1920,6 +1933,32 @@ var earcut = (function () {
     zoomButtons();
   }
 
+  /* ---------- globe projection (css px; the radius fills the useful area at 1x) ---------- */
+  function globeR0() { return Math.max(40, 0.47 * Math.min(layout.x1 - layout.x0, layout.y1 - layout.y0)); }
+  function globeR(v) { return globeR0() * (v || view).z; }
+  function globeRot(v) { const p0 = latOfY(v.cy) * RAD; return [Math.sin(p0), Math.cos(p0), lonOfX(v.cx) * RAD]; }
+  // -> [x, y, z]: z > 0 on the near side
+  function globeProj(lon, lat, v) {
+    v = v || view;
+    const [s0, c0, l0] = globeRot(v), la = lat * RAD, dl = lon * RAD - l0, cl = Math.cos(la), sl = Math.sin(la), R = globeR(v);
+    return [layout.ax + cl * Math.sin(dl) * R, layout.ay - (sl * c0 - cl * s0 * Math.cos(dl)) * R, sl * s0 + cl * c0 * Math.cos(dl)];
+  }
+  // a place on the far side is put far off screen, so everything that tests "on screen" leaves it out
+  function globeXY(lon, lat) { const r = globeProj(lon, lat); return r[2] > 0.02 ? [r[0], r[1]] : [-1e5, -1e5]; }
+  function globeInv(x, y, v) {
+    v = v || view;
+    const R = globeR(v), X = (x - layout.ax) / R, Y = (layout.ay - y) / R, r2 = X * X + Y * Y;
+    if (r2 > 1) return null;
+    const [s0, c0, l0] = globeRot(v), Z = Math.sqrt(1 - r2);
+    return { lon: normLon((l0 + Math.atan2(X, Z * c0 - Y * s0)) / RAD), lat: Math.asin(clamp(Z * s0 + Y * c0, -1, 1)) / RAD };
+  }
+  // The place under a screen point, in either view (null: off the map)
+  function screenLL(x, y) {
+    if (globeOn) return globeInv(x, y);
+    const w = cssToWorld(x, y);
+    return w.y >= 0 && w.y <= 1 ? { lon: normLon(lonOfX(w.x)), lat: latOfY(w.y) } : null;
+  }
+
   /* ---------- view: centre in world units (cx unbounded while animating), zoom 1 = the whole world in the useful area ---------- */
   let view = { cx: 0.5, cy: 0.5, z: 1 };
   let anim = null;
@@ -1928,17 +1967,19 @@ var earcut = (function () {
   // the equator; the scale A/C reached at 64x on a 1920 px screen) coastlines turn into visible polygons and the view
   // only gets emptier, so that scale is the limit (CONFIG.maxDetailPx, 0 = no limit).
   const maxZoom = () => {
+    if (globeOn) return GLOBE_MAX;
     let z = clamp(CONFIG.maxZoom || 128, 2, 512);
     if (CONFIG.maxDetailPx > 0) z = Math.min(z, Math.max(16, CONFIG.maxDetailPx / layout.s0));
     return z;
   };
-  const scaleOf = (v) => layout.s0 * v.z;                       // css px per world unit
+  const scaleOf = (v) => (globeOn ? 2 * PI * globeR0() * v.z : layout.s0 * v.z);   // css px per world unit (globe: at the centre)
   // Vertical limits: the screen stays inside the Mercator square. While the world is shorter than the screen (portrait
   // up to 2x, 4:3 at 1x) the useful band below the HUD and above the toolbar is used instead: the world covers that band
   // (or stays inside it when it is shorter still), so a click on a northern place at 2x in portrait brings it down to
   // the view centre instead of being held near 30S. Near the whole-world view the home position is always allowed, even
   // where it shows a little ocean beyond 85N (the space freed by not drawing Antarctica); the allowance fades out by 2x.
   function clampView(v) {
+    if (globeOn) return { cx: v.cx, cy: clamp(v.cy, mercY(GLOBE_LAT_MAX), mercY(-GLOBE_LAT_MAX)), z: clamp(v.z, 1, GLOBE_MAX) };
     const z = clamp(v.z, 1, maxZoom()), s = layout.s0 * z;
     let top = 0, bot = size.cssH;
     if (s < size.cssH) { top = layout.y0; bot = layout.y1; }
@@ -1950,13 +1991,16 @@ var earcut = (function () {
   }
   // World y below which nothing is drawn: HOME_CROP_LAT (or a pin's latitude) at the whole-world view, moving off the
   // bottom by 1.7x.
-  function cropWY(v) { const c = layout.cropY + (v.z - 1) * 0.6; return c >= 1 ? 1 : c; }
+  function cropWY(v) { if (globeOn) return 1; const c = layout.cropY + (v.z - 1) * 0.6; return c >= 1 ? 1 : c; }
   // The graticule covers everything drawn: meridians from the Mercator limit (85N) down to that crop (or 85S once it is
   // gone), parallels up to 85 degrees and down to the last one above the crop.
   const GRID_LAT = 85;
   function gridLatMin(v) { const c = cropWY(v); return c >= 1 ? -MAXLAT : Math.max(-MAXLAT, latOfY(c)); }
   const gridParMin = (latMin, step) => Math.ceil(latMin / step - 1e-9) * step;
-  function homeView() { return clampView({ cx: xOfLon(normLon(CONFIG.homeLon || 0)), cy: layout.cyHome, z: 1 }); }
+  function homeView() {
+    if (globeOn) return clampView({ cx: xOfLon(normLon(+CONFIG.globeLon || 0)), cy: mercY(clamp(+CONFIG.globeLat || 0, -60, 60)), z: 1 });
+    return clampView({ cx: xOfLon(normLon(CONFIG.homeLon || 0)), cy: layout.cyHome, z: 1 });
+  }
   computeLayout();
   view = homeView();
   const targetView = () => (anim ? anim.to : view);
@@ -1977,16 +2021,17 @@ var earcut = (function () {
     let dx = wx - v.cx; dx -= Math.round(dx);          // nearest world copy to the centre
     return [layout.ax + dx * s, layout.ay + (wy - v.cy) * s];
   }
-  const lonLatToCss = (lon, lat) => worldToCss(xOfLon(normLon(lon)), mercY(lat));
+  const lonLatToCss = (lon, lat) => (globeOn ? globeXY(lon, lat) : worldToCss(xOfLon(normLon(lon)), mercY(lat)));
   // A pin's tip on screen. Near the whole-world view a pin south of the southern crop (HOME_CAP_LAT) sits on the crop
   // edge (pinBelow: it shows a small arrow), and slides down to its true place as the crop moves away when zooming in.
   const pinWY = (p) => mercY(clamp(p.lat, -PIN_LAT, PIN_LAT));
-  const pinBelow = (p) => { const c = cropWY(view); return c < 1 && pinWY(p) > c - 1e-9; };
-  const pinXY = (p) => { const c = cropWY(view), y = pinWY(p); return worldToCss(xOfLon(normLon(p.lon)), c < 1 && y > c - 1e-9 ? c - 1e-9 : y); };
+  const pinBelow = (p) => { if (globeOn) return false; const c = cropWY(view); return c < 1 && pinWY(p) > c - 1e-9; };
+  const pinXY = (p) => { if (globeOn) return globeXY(p.lon, p.lat); const c = cropWY(view), y = pinWY(p); return worldToCss(xOfLon(normLon(p.lon)), c < 1 && y > c - 1e-9 ? c - 1e-9 : y); };
   // Is a screen point on the drawn world? While the world is narrower than the screen only one copy of it is drawn
   // (centred on the view); with y, also inside the Mercator square and above the southern crop of the world view.
   function inWorld(x, y, v) {
     v = v || view;
+    if (globeOn) { const R = globeR(v), dx = x - layout.ax; if (y == null) return Math.abs(dx) <= R; const dy = y - layout.ay; return dx * dx + dy * dy <= R * R; }
     const s = scaleOf(v);
     if (s < size.cssW && Math.abs(x - layout.ax) > s / 2 + 0.5) return false;
     if (y == null) return true;
@@ -2007,6 +2052,8 @@ var earcut = (function () {
     const z = targetView().z;
     bOut.disabled = z <= 1 + 1e-6;
     bIn.disabled = z >= maxZoom() - 1e-6;
+    const tipIn = globeOn && bIn.disabled ? 'Closest globe view: the flat map zooms further' : 'Zoom in';
+    if (bIn.dataset.tip !== tipIn) bIn.dataset.tip = tipIn;
     showLedger();
   }
   function animateTo(to, opt) {
@@ -2054,6 +2101,12 @@ var earcut = (function () {
   }
   function zoomButton(dir) {
     const tv = targetView();
+    if (globeOn) {        // the globe zooms about its centre
+      const z = clamp(zoomStep(tv.z, dir), 1, GLOBE_MAX);
+      intent = null;
+      if (Math.abs(z - tv.z) > 1e-9) animateTo({ cx: tv.cx, cy: tv.cy, z }, { dur: 420 });
+      return;
+    }
     const z = clamp(zoomStep(tv.z, dir), 1, maxZoom());
     if (Math.abs(z - tv.z) < 1e-9) return;
     const it = intent && dir > 0 && sameView(intent.view, tv) ? intent : null;
@@ -2074,6 +2127,7 @@ var earcut = (function () {
   }
   function zoomAt(sx, sy, z, dur) {
     z = clamp(z, 1, maxZoom());
+    if (globeOn) { const tv = targetView(); animateTo({ cx: tv.cx, cy: tv.cy, z }, { dur: dur || 260, ease: easeOut }); return; }
     // While the world is narrower than the screen only its single home-centred copy is drawn: zooming about another
     // point there would turn that copy and slice continents, so those zooms keep the home centre (and 1x is home).
     if (z <= 1 + 1e-3) { animateTo(homeView(), { dur: dur || 260 }); return; }
@@ -2102,7 +2156,7 @@ var earcut = (function () {
   function afterSettle() {
     // While the world is narrower than the screen its single drawn copy is always the home-centred one: any other
     // centre there (keyboard, an option like ?ignoreclicks=0) glides back, so the view is never left sliced.
-    if (!anim && !drag && scaleOf(view) < size.cssW) {
+    if (!globeOn && !anim && !drag && scaleOf(view) < size.cssW) {
       let dx = view.cx - homeView().cx; dx -= Math.round(dx);
       if (Math.abs(dx) > 1e-9) { animateTo({ cx: homeView().cx, cy: view.cy, z: view.z }, { dur: 300 }); if (anim) return; }
     }
@@ -2130,6 +2184,7 @@ var earcut = (function () {
 
   /* ---------- level of detail ---------- */
   function wantLevel(v) {
+    if (globeOn) return 0;   // the globe is drawn from the coarsest level (3 km), which holds up to GLOBE_MAX
     const lat = latOfY(v.cy);
     return W.pickLevel(40075016.7 * Math.cos(lat * RAD) / (scaleOf(v) * size.devW / size.cssW));
   }
@@ -2139,6 +2194,10 @@ var earcut = (function () {
   // range of world x, and the device-px rectangle [x0, y0, x1, y1] that land and lines are clipped to (null = none):
   // the column of the single world copy while the world is narrower than the screen, and the southern crop near 1x.
   function frameGeom(v) {
+    if (globeOn) {
+      const dpr = size.devW / size.cssW, R = globeR(v) * dpr;
+      return { dpr, scale: 2 * PI * R, axd: layout.ax * dpr, ayd: layout.ay * (size.devH / size.cssH), xl: 0, xr: 1, clip: null, fade: null, k0: 0, k1: 0, globe: true, R, rot: globeRot(v) };
+    }
     const dpr = size.devW / size.cssW, dprY = size.devH / size.cssH;
     const scale = layout.s0 * v.z * dpr;
     const axd = layout.ax * dpr, ayd = layout.ay * dprY;
@@ -2192,6 +2251,7 @@ var earcut = (function () {
     const SEG_W = 4096;
     let hov = null, vis = null;    // outline segment textures: hovered country, visited countries
     const levels = [];             // GPU data per level (or undefined)
+    let globeLv = null;            // the globe's fills: level 0 with large triangles subdivided (built on first use)
     const segCache = new Map();    // outline segments per (level, country), small LRU so hovering back and forth is free
     let baseKey = '', dynKey = '';
     // Partial redraws: when only the hovered country changed since the last frame, just the screen rectangle covering
@@ -2199,28 +2259,52 @@ var earcut = (function () {
     let frameKey = '', lastHover = -1, colorVer = 0;
     let relTex = null, relImg = null;   // shaded relief (R8, mipmapped), uploaded once the embedded image has decoded
 
+    // Globe view (u_globe = 1): an orthographic projection about u_anchor; u_g = sin / cos of the centre latitude, the
+    // centre longitude (rad) and the radius in device px. Same data, same passes: only the vertex positions change.
     const VS_COMMON = `#version 300 es
       precision highp float;
       uniform vec2 u_center; uniform float u_scale; uniform vec2 u_vp; uniform float u_xoff; uniform vec2 u_anchor;
-      vec2 toPx(vec2 w) { return (w + vec2(u_xoff, 0.0) - u_center) * u_scale; }
+      uniform float u_globe; uniform vec4 u_g;
+      // a place on the unit sphere, turned so the view centre faces the viewer (x right, y up, z towards the viewer)
+      vec3 sph(float lon, float lat) {
+        float dl = lon - u_g.z, cl = cos(lat), sl = sin(lat);
+        return vec3(cl * sin(dl), sl * u_g.y - cl * u_g.x * cos(dl), sl * u_g.x + cl * u_g.y * cos(dl));
+      }
+      vec3 gpt(vec2 w) { return sph(w.x * 6.283185307179586 - 3.141592653589793, atan(sinh((0.5 - w.y) * 6.283185307179586))); }
+      vec2 toPx(vec2 w) {
+        if (u_globe > 0.5) { vec3 p = gpt(w); return vec2(p.x, -p.y) * u_g.w; }
+        return (w + vec2(u_xoff, 0.0) - u_center) * u_scale;
+      }
       vec4 toClip(vec2 p) { p += u_anchor; return vec4(p.x * 2.0 / u_vp.x - 1.0, 1.0 - p.y * 2.0 / u_vp.y, 0.0, 1.0); }
     `;
     const FILL_VS = VS_COMMON + `
       layout(location = 0) in vec2 a_pos;
-      out vec2 v_w;
-      void main() { v_w = a_pos; gl_Position = toClip(toPx(a_pos)); }`;
+      uniform float u_eq;            // globe geometry: y is (90 - lat) / 180 instead of Mercator (so it reaches the poles)
+      out vec2 v_w; out float v_z;
+      void main() {
+        v_w = a_pos; v_z = 1.0;
+        if (u_globe > 0.5) {
+          float lat = u_eq > 0.5 ? (0.5 - a_pos.y) * 3.141592653589793 : atan(sinh((0.5 - a_pos.y) * 6.283185307179586));
+          vec3 p = sph(a_pos.x * 6.283185307179586 - 3.141592653589793, lat);
+          vec2 xy = vec2(p.x, -p.y);
+          if (p.z < 0.0) xy /= max(length(xy), 1e-6);      // behind the horizon: onto the rim (triangles are small)
+          v_z = p.z;
+          gl_Position = toClip(xy * u_g.w);
+        } else gl_Position = toClip(toPx(a_pos));
+      }`;
     // Land fills carry the shaded relief: the relief tone (128 = flat) mixes the fill towards a warm shadow colour on
     // slopes facing away from the north-west light and on high ground, and towards a pale highlight on lit slopes.
     const FILL_FS = `#version 300 es
       precision highp float;
-      in vec2 v_w;
-      uniform vec4 u_color; uniform sampler2D u_rel; uniform float u_relief; uniform vec3 u_rLo, u_rHi;
+      in vec2 v_w; in float v_z;
+      uniform vec4 u_color; uniform sampler2D u_rel; uniform float u_relief, u_eq; uniform vec3 u_rLo, u_rHi;
       out vec4 o;
       void main() {
+        if (v_z < -0.06) discard;    // globe: a triangle well behind the horizon
         vec3 c = u_color.rgb;
         if (u_relief > 0.0) {
-          float lat = atan(sinh((0.5 - v_w.y) * 6.283185307179586));
-          float d = (texture(u_rel, vec2(v_w.x, 0.5 - lat * 0.3183098861837907)).r - 0.502) * 2.0;
+          float ty = u_eq > 0.5 ? v_w.y : 0.5 - atan(sinh((0.5 - v_w.y) * 6.283185307179586)) * 0.3183098861837907;
+          float d = (texture(u_rel, vec2(v_w.x, ty)).r - 0.502) * 2.0;
           c = d < 0.0 ? mix(c, u_rLo, min(0.85, -d * u_relief)) : mix(c, u_rHi, min(0.85, d * u_relief));
         }
         o = vec4(c, u_color.a);
@@ -2242,7 +2326,15 @@ var earcut = (function () {
         vec4 s = texelFetch(u_segs, ivec2(seg & 4095, seg >> 12), 0);
         float cx = (k == 1 || k >= 4) ? 1.0 : 0.0;
         float cy = (k == 2 || k == 3 || k == 5) ? 1.0 : -1.0;
-        vec2 p0 = toPx(s.xy), p1 = toPx(s.zw);
+        vec2 p0, p1;
+        if (u_globe > 0.5) {
+          // globe: segments behind the horizon are dropped, those crossing it are cut at the rim
+          vec3 a = gpt(s.xy), b = gpt(s.zw);
+          if (a.z < 0.0 && b.z < 0.0) { v_q = vec2(0.0); v_len = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+          if (a.z < 0.0) a = normalize(mix(a, b, a.z / (a.z - b.z)));
+          else if (b.z < 0.0) b = normalize(mix(b, a, b.z / (b.z - a.z)));
+          p0 = vec2(a.x, -a.y) * u_g.w; p1 = vec2(b.x, -b.y) * u_g.w;
+        } else { p0 = toPx(s.xy); p1 = toPx(s.zw); }
         vec2 d = p1 - p0; float len = length(d);
         vec2 t = len > 1e-5 ? d / len : vec2(1.0, 0.0);
         vec2 n = vec2(-t.y, t.x);
@@ -2270,7 +2362,14 @@ var earcut = (function () {
       precision highp float;
       uniform vec2 u_center; uniform float u_scale; uniform vec2 u_vp; uniform vec2 u_anchor;
       uniform vec2 u_fade;           // the southern crop's fade: from row x (fully drawn) to row y (gone), device px from the top
+      uniform float u_globe; uniform vec4 u_g;
       const float PI = 3.141592653589793;
+      // globe: this pixel's place in units of the radius (r > 1: off the globe) and its lat / lon (rad)
+      vec2 globeP() { return (vec2(gl_FragCoord.x, u_vp.y - gl_FragCoord.y) - u_anchor) / u_g.w; }
+      vec2 globeLL(vec2 p) {
+        float zc = sqrt(max(0.0, 1.0 - dot(p, p)));
+        return vec2(u_g.z + atan(p.x, zc * u_g.y + p.y * u_g.x), asin(clamp(zc * u_g.x - p.y * u_g.y, -1.0, 1.0)));
+      }
       vec2 fragPx() { return vec2(gl_FragCoord.x, u_vp.y - gl_FragCoord.y); }
       float fadeK() { return u_fade.y > u_fade.x ? 1.0 - smoothstep(u_fade.x, u_fade.y, fragPx().y) : 1.0; }
       vec2 fragWorld() { return u_center + (fragPx() - u_anchor) / u_scale; }
@@ -2289,6 +2388,21 @@ var earcut = (function () {
         vec2 f = fragPx(); vec2 w = fragWorld();
         vec2 q = (f / u_vp - 0.5) * vec2(u_vp.x / u_vp.y, 1.0);
         vec3 col = mix(u_edge, u_ocean, smoothstep(1.15, 0.05, length(q)));
+        float inG = 1.0, g = 0.0;
+        if (u_globe > 0.5) {
+          // globe: the sea darkens towards the rim; around it the backdrop, a little deeper, with a soft shadow at the rim;
+          // the graticule is exact (meridians stop at 80 degrees, where they crowd together)
+          vec2 p = globeP(); float r = length(p);
+          inG = clamp((1.0 - r) * u_g.w + 0.5, 0.0, 1.0);
+          vec3 back = mix(u_edge, col, 0.55) * (1.0 - 0.16 * (1.0 - smoothstep(1.0, 1.07, r)));
+          vec3 sea = mix(u_ocean, u_edge, 0.6 * smoothstep(0.3, 1.0, r * r));
+          vec2 ll = degrees(globeLL(p));      // (derivatives outside any per-pixel branch)
+          float lw = min(fwidth(ll.x), fwidth(mod(ll.x + 180.0, 360.0))), pw = fwidth(ll.y);
+          float dm = abs(fract(ll.x / u_step + 0.5) - 0.5) * u_step / max(lw, 1e-5);
+          float dp = abs(fract(ll.y / u_step + 0.5) - 0.5) * u_step / max(pw, 1e-5);
+          g = max(clamp(1.0 - dm, 0.0, 1.0) * step(abs(ll.y), 80.01), clamp(1.0 - dp, 0.0, 1.0)) * step(r, 1.0) * inG;
+          col = mix(back, sea, inG);
+        }
         // water: a lighter band of shallow water and three engraved lines that follow the coast (drawn on the whole
         // screen; the land fills drawn next cover the inland half)
         float wl = 0.0;
@@ -2296,17 +2410,20 @@ var earcut = (function () {
           float a = texelFetch(u_cov, ivec2(gl_FragCoord.xy), 0).a;
           if (a > 0.0) {
             float d = (1.0 - a) * u_wd, hw = 0.42 * u_dpr;
-            col = mix(col, u_shelf.rgb, u_shelf.a * a * a);
+            col = mix(col, u_shelf.rgb, u_shelf.a * a * a * inG);
             for (int i = 0; i < 3; i++) wl = max(wl, clamp(hw + 0.5 - abs(d - u_rings[i] * u_dpr), 0.0, 1.0) * u_ringA[i]);
+            wl *= inG;
           }
         }
-        float sw = u_step / 360.0;
-        float dm = abs(fract(w.x / sw + 0.5) - 0.5) * sw * u_scale;
-        float lat = degrees(latOf(w.y));
-        float latN = clamp(floor(lat / u_step + 0.5) * u_step, u_parMin, floor(85.0 / u_step + 1e-4) * u_step);
-        float yN = 0.5 - log(tan(PI * 0.25 + radians(latN) * 0.5)) / (2.0 * PI);
-        float dp = abs(w.y - yN) * u_scale;
-        float g = max(clamp(1.0 - dm, 0.0, 1.0) * step(lat, 85.06) * step(u_latMin, lat) * (1.0 - u_fadePass), clamp(1.0 - dp, 0.0, 1.0));
+        if (u_globe < 0.5) {
+          float sw = u_step / 360.0;
+          float dm = abs(fract(w.x / sw + 0.5) - 0.5) * sw * u_scale;
+          float lat = degrees(latOf(w.y));
+          float latN = clamp(floor(lat / u_step + 0.5) * u_step, u_parMin, floor(85.0 / u_step + 1e-4) * u_step);
+          float yN = 0.5 - log(tan(PI * 0.25 + radians(latN) * 0.5)) / (2.0 * PI);
+          float dp = abs(w.y - yN) * u_scale;
+          g = max(clamp(1.0 - dm, 0.0, 1.0) * step(lat, 85.06) * step(u_latMin, lat) * (1.0 - u_fadePass), clamp(1.0 - dp, 0.0, 1.0));
+        }
         col = mix(col, u_grid.rgb, u_grid.a * g);
         col = mix(col, u_water.rgb, u_water.a * wl);
         o = vec4(col + dith(), u_fadePass > 0.5 ? 1.0 - fadeK() : 1.0);
@@ -2326,20 +2443,28 @@ var earcut = (function () {
         vec2 w = fragWorld();
         float lat = latOf(clamp(w.y, 0.0, 1.0));
         float lon = (w.x * 2.0 - 1.0) * PI;
+        vec2 gp = vec2(0.0); float gr = 0.0, inG = 1.0;
+        if (u_globe > 0.5) { gp = globeP(); gr = length(gp); inG = step(gr, 1.0); vec2 ll = globeLL(gp); lon = ll.x; lat = ll.y; }
         float sinAlt = sin(lat) * u_sun.x + cos(lat) * u_sun.y * cos(lon - u_sun.z);
-        float na = u_night.a * smoothstep(0.03, -0.21, sinAlt);
+        float na = u_night.a * smoothstep(0.03, -0.21, sinAlt) * inG;
         vec4 c = vec4(u_night.rgb * na, na);
         // aged paper: a static fine grain plus a gentle darkening toward the screen edges (umber, under the lines)
         vec2 q = (fragPx() / u_vp - 0.5) * vec2(u_vp.x / u_vp.y, 1.0);
         float grain = fract(52.9829189 * fract(dot(floor(gl_FragCoord.xy), vec2(0.06711056, 0.00583715)) + 0.37 * fract(gl_FragCoord.y * 0.1031)));
         float age = 0.035 * grain + 0.16 * smoothstep(0.35, 1.05, length(q));
         c = over(c, vec4(0.29, 0.19, 0.08, 1.0), age);
+        if (u_globe > 0.5) {
+          // the globe's roundness: umber shading towards the rim, a faint sheen up-left, an ink line at the rim
+          c = over(c, vec4(0.2, 0.13, 0.05, 1.0), inG * 0.32 * smoothstep(0.5, 1.0, gr));
+          c = over(c, vec4(1.0, 0.98, 0.92, 1.0), inG * 0.07 * (1.0 - smoothstep(0.0, 0.75, length(gp - vec2(-0.38, -0.42)))));
+        }
         c = over(c, u_cGlow, glw);
         c = over(c, u_cAdmin, cov.b);
         c = over(c, u_cBorder, cov.g);
         c = over(c, u_cCoast, cov.r);
         c = over(c, u_cVisited, dyn.r);
         c = over(c, u_cHover, dyn.g);
+        if (u_globe > 0.5) c = over(c, u_cCoast, clamp(1.4 - abs(gr - 1.0) * u_g.w, 0.0, 1.0));
         c.rgb += dith() * smoothstep(0.0, 0.004, na);      // dither the night gradient only (nothing else changes)
         o = c;
       }`;
@@ -2430,27 +2555,30 @@ var earcut = (function () {
         dynKey = '';
       }
     }
-    function upload(L, d) {
+    function upload(L, d) { levels[L] = makeGPU(d); }
+    function uploadGlobe(d) { if (globeLv) freeGPU(globeLv); globeLv = makeGPU(d); }
+    function freeGPU(lv) {
+      if (!gl || gl.isContextLost()) return;
+      gl.deleteVertexArray(lv.vaoF); gl.deleteBuffer(lv.vb); gl.deleteBuffer(lv.ib); if (lv.segTex) gl.deleteTexture(lv.segTex);
+    }
+    function makeGPU(d) {
       const lv = { meta: d.meta };
       lv.vaoF = gl.createVertexArray(); gl.bindVertexArray(lv.vaoF);
       lv.vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, lv.vb); gl.bufferData(gl.ARRAY_BUFFER, d.pos, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       lv.ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lv.ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, d.idx, gl.STATIC_DRAW);
       gl.bindVertexArray(null);
-      lv.segTex = gl.createTexture();
-      segTexture(lv.segTex, d.segs);
+      if (d.segs) { lv.segTex = gl.createTexture(); segTexture(lv.segTex, d.segs); }
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-      lv.bytes = d.pos.byteLength + d.idx.byteLength + Math.ceil(d.segs.length / (SEG_W * 4)) * SEG_W * 16;
-      levels[L] = lv;
+      lv.bytes = d.pos.byteLength + d.idx.byteLength + (d.segs ? Math.ceil(d.segs.length / (SEG_W * 4)) * SEG_W * 16 : 0);
+      return lv;
     }
     // Release a level's GPU data (it is rebuilt in the background if the user zooms back to it).
     function free(L) {
       const lv = levels[L];
       if (!lv) return;
       levels[L] = undefined;
-      if (gl && !gl.isContextLost()) {
-        gl.deleteVertexArray(lv.vaoF); gl.deleteBuffer(lv.vb); gl.deleteBuffer(lv.ib); gl.deleteTexture(lv.segTex);
-      }
+      freeGPU(lv);
       for (const k of Array.from(segCache.keys())) if ((k >> 10) === L) segCache.delete(k);
       if (vis.key.endsWith(':' + L)) vis.key = '';
       if (hov.key.endsWith(':' + L)) hov.key = '';
@@ -2469,6 +2597,8 @@ var earcut = (function () {
       if (prog.u.u_anchor) gl.uniform2f(prog.u.u_anchor, g.axd, g.ayd);
       if (prog.u.u_xoff) gl.uniform1f(prog.u.u_xoff, xoff);
       if (prog.u.u_fade) gl.uniform2f(prog.u.u_fade, g.fade ? g.fade[0] : 0, g.fade ? g.fade[1] : 0);
+      if (prog.u.u_globe) gl.uniform1f(prog.u.u_globe, g.globe ? 1 : 0);
+      if (prog.u.u_g && g.globe) gl.uniform4f(prog.u.u_g, g.rot[0], g.rot[1], g.rot[2], g.R);
     }
     function segTexture(tex, data) {        // 4 floats (x0, y0, x1, y1) per segment, SEG_W segments per row
       const n = data.length >> 2, rows = Math.max(1, Math.ceil(n / SEG_W));
@@ -2535,22 +2665,24 @@ var earcut = (function () {
       if (!ok || gl.isContextLost()) return false;
       const L = drawLevelFor(st.want);
       if (L < 0) return false;
+      if (st.globe && (!globeLv || !levels[0])) return false;
       st.drawnLevel = L;
       const lv = levels[L], m = lv.meta, v = st.view;
+      const lvF = st.globe ? globeLv : lv, mF = lvF.meta;   // fills: the globe has its own subdivided triangles
       const dyn = st.visited.size > 0 || st.hover >= 0;
       sizeTargets(dyn);
       const g = frameGeom(v), k0 = g.k0, k1 = g.k1, sc = g.clip;
       const wz = webZoom(v);
-      const nLakes = m.lakes.count(wz + 1), nShore = m.shores.count(wz + 1), nAdmin = v.z >= 2 - 1e-6 ? m.admin.count(wz + 0.5) : 0;   // state/province lines: not at the whole-world view
+      const nLakes = mF.lakes.count(wz + 1), nShore = m.shores.count(wz + 1), nAdmin = v.z >= 2 - 1e-6 ? m.admin.count(wz + 0.5) : 0;   // state/province lines: not at the whole-world view
       const dpr = g.dpr, glow = CONFIG.coastGlow ? 1.5 : 0;
       const wd = CONFIG.waterLines ? WATER_D * dpr : glow ? 3 : 0;   // device px over which the distance to the coast is kept
-      const bk = [v.cx, v.cy, v.z, size.devW, size.devH, L, nShore, nAdmin, g.axd, g.ayd, g.scale, wd, sc ? sc.join(' ') : ''].join(',');
+      const bk = [v.cx, v.cy, v.z, size.devW, size.devH, L, nShore, nAdmin, g.axd, g.ayd, g.scale, wd, sc ? sc.join(' ') : '', g.globe ? 'G' : ''].join(',');
       const vk = st.visitedKey + ':' + L;
       const dk = bk + '|' + vk + '|' + st.hover;
       const fk = [bk, vk, sun.lon, sun.sinDec, CONFIG.showNight ? 1 : 0, colorVer].join('|');
       // Only the hover changed: redraw just the rectangle covering the old and new hovered country.
       let part = null;
-      if (fk === frameKey && st.hover !== lastHover) {
+      if (fk === frameKey && st.hover !== lastHover && !g.globe) {
         const a = countryRect(lastHover, v, g), b = countryRect(st.hover, v, g);
         const r = a && b ? [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])] : (a || b);
         if (!r) part = [0, 0, 0, 0];
@@ -2639,7 +2771,7 @@ var earcut = (function () {
       gl.uniform3f(P.bg.u.u_edge, C.oceanEdge[0], C.oceanEdge[1], C.oceanEdge[2]);
       gl.uniform4fv(P.bg.u.u_grid, C.grid);
       const zl = Math.log2(v.z);
-      const gstep = zl < 0.9 ? 15 : zl < 1.9 ? 10 : zl < 2.9 ? 5 : zl < 3.9 ? 2 : zl < 4.9 ? 1 : 0.5;
+      const gstep = g.globe ? (zl < 0.9 ? 15 : zl < 1.9 ? 10 : 5) : zl < 0.9 ? 15 : zl < 1.9 ? 10 : zl < 2.9 ? 5 : zl < 3.9 ? 2 : zl < 4.9 ? 1 : 0.5;
       gl.uniform1f(P.bg.u.u_step, gstep);
       const gMin = gridLatMin(v);
       gl.uniform1f(P.bg.u.u_latMin, gMin);
@@ -2660,7 +2792,8 @@ var earcut = (function () {
       // 3) land, visited and hover tints, lakes. Opaque fills; neighbours share exact vertices (no seams) and every fill
       //    edge lies under an analytically anti-aliased line, so the drawing buffer needs no MSAA (?msaa=1 turns it on).
       gl.useProgram(P.fill.p);
-      gl.bindVertexArray(lv.vaoF);
+      gl.bindVertexArray(lvF.vaoF);
+      gl.uniform1f(P.fill.u.u_eq, g.globe ? 1 : 0);
       scissor(true);
       const rk = relTex ? reliefK(v) : 0;
       gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, relTex); gl.activeTexture(gl.TEXTURE0);
@@ -2671,25 +2804,25 @@ var earcut = (function () {
         setCommon(P.fill, v, g, k);
         gl.uniform1f(P.fill.u.u_relief, rk);
         gl.uniform4fv(P.fill.u.u_color, C.land);
-        gl.drawElements(gl.TRIANGLES, m.landCount, gl.UNSIGNED_INT, 0);
-        const statesOn = !!(m.stStart && m.stStart.length && st.visitedStates && st.visitedStates.size && st.visited.has(USA_CI));
+        gl.drawElements(gl.TRIANGLES, mF.landCount, gl.UNSIGNED_INT, 0);
+        const statesOn = !!(mF.stStart && mF.stStart.length && st.visitedStates && st.visitedStates.size && st.visited.has(USA_CI));
         for (const ci of st.visited) {
           if (statesOn && ci === USA_CI) continue;   // tinted state by state below
           gl.uniform4fv(P.fill.u.u_color, ci === st.hover ? C.visitedHover : C.visited);
-          gl.drawElements(gl.TRIANGLES, m.cCount[ci], gl.UNSIGNED_INT, m.cStart[ci] * 4);
+          gl.drawElements(gl.TRIANGLES, mF.cCount[ci], gl.UNSIGNED_INT, mF.cStart[ci] * 4);
         }
         if (st.hover >= 0 && (!st.visited.has(st.hover) || (statesOn && st.hover === USA_CI))) {
           gl.uniform4fv(P.fill.u.u_color, C.landHover);
-          gl.drawElements(gl.TRIANGLES, m.cCount[st.hover], gl.UNSIGNED_INT, m.cStart[st.hover] * 4);
+          gl.drawElements(gl.TRIANGLES, mF.cCount[st.hover], gl.UNSIGNED_INT, mF.cStart[st.hover] * 4);
         }
         if (statesOn) {
           gl.uniform4fv(P.fill.u.u_color, st.hover === USA_CI ? C.visitedHover : C.visited);
-          for (const si of st.visitedStates) if (m.stCount[si]) gl.drawElements(gl.TRIANGLES, m.stCount[si], gl.UNSIGNED_INT, m.stStart[si] * 4);
+          for (const si of st.visitedStates) if (mF.stCount[si]) gl.drawElements(gl.TRIANGLES, mF.stCount[si], gl.UNSIGNED_INT, mF.stStart[si] * 4);
         }
         if (nLakes > 0) {
           gl.uniform1f(P.fill.u.u_relief, 0);
           gl.uniform4fv(P.fill.u.u_color, C.lake);
-          gl.drawElements(gl.TRIANGLES, nLakes, gl.UNSIGNED_INT, m.lakes.start * 4);
+          gl.drawElements(gl.TRIANGLES, nLakes, gl.UNSIGNED_INT, mF.lakes.start * 4);
         }
       }
       scissor(false);
@@ -2746,14 +2879,15 @@ var earcut = (function () {
       if (!ok || gl.isContextLost() || (cov2W <= 1 && cov2H <= 1)) return;
       allocCov(covTex2, fbo2, 1, 1, gl.RG8, gl.RG); cov2W = cov2H = 1; dynKey = '';
     }
-    function lost() { ok = false; levels.length = 0; segCache.clear(); baseKey = dynKey = frameKey = ''; covW = covH = 0; cov2W = cov2H = 0; }
+    function lost() { ok = false; levels.length = 0; globeLv = null; segCache.clear(); baseKey = dynKey = frameKey = ''; covW = covH = 0; cov2W = cov2H = 0; }
     function stats() {
       let bytes = 0; const built = [];
       for (let L = 0; L < NLEV; L++) if (levels[L]) { built.push(L); bytes += levels[L].bytes; }
-      return { relief: !!relTex, built, levelMB: +(bytes / 1048576).toFixed(1), cov: [covW, covH], cov2: [cov2W, cov2H], covMB: +((covW * covH * 4 + cov2W * cov2H * 2) / 1048576).toFixed(1) };
+      return { relief: !!relTex, globe: globeLv ? +(globeLv.bytes / 1048576).toFixed(1) : 0, globeTris: globeLv ? globeLv.meta.tris : 0, globeVerts: globeLv ? globeLv.meta.verts : 0, built, levelMB: +(bytes / 1048576).toFixed(1), cov: [covW, covH], cov2: [cov2W, cov2H], covMB: +((covW * covH * 4 + cov2W * cov2H * 2) / 1048576).toFixed(1) };
     }
     return {
-      init, setup, render, upload, has, lost, free, stats, trimDyn, setRelief,
+      init, setup, render, upload, uploadGlobe, has, lost, free, stats, trimDyn, setRelief,
+      hasGlobe: () => !!globeLv,
       get ok() { return ok && gl && !gl.isContextLost(); },
       get gl() { return gl; },
       invalidate() { baseKey = dynKey = frameKey = ''; colorVer++; },
@@ -2784,7 +2918,8 @@ var earcut = (function () {
       }
     };
   }
-  function* buildLevel(L) {
+  // eq: y = (90 - lat) / 180 instead of Mercator, and fills only (the globe's geometry, see buildGlobe)
+  function* buildLevel(L, eq) {
     const R = W.countryRings(L);
     const LR = W.lakeRings ? W.lakeRings(Math.min(L, W.lakeLevels.length - 1)) : [];
     let nv = 0;
@@ -2814,7 +2949,7 @@ var earcut = (function () {
         for (let j = 0; j < g.length; j++) {
           const c = rs[g[j]].c;
           if (j) hi.push(o >> 1);
-          for (let i = 0; i < c.length; i += 2) { data[o + i] = (c[i] + 180) / 360; data[o + i + 1] = mercY(c[i + 1]); }
+          for (let i = 0; i < c.length; i += 2) { data[o + i] = (c[i] + 180) / 360; data[o + i + 1] = eq ? (90 - c[i + 1]) / 180 : mercY(c[i + 1]); }
           o += c.length;
         }
         pos.set(data, vb * 2);
@@ -2841,6 +2976,7 @@ var earcut = (function () {
     // US states (for the visited-state tint), after the lakes
     const stStart = [], stCount = [];
     if (US) for (let si = 0; si < US.byState.length; si++) { stStart[si] = ni; feature(US.byState[si]); stCount[si] = ni - stStart[si]; }
+    if (eq) return { pos: pos.subarray(0, vb * 2), idx: idx.subarray(0, ni), meta: { cStart, cCount, landCount, stStart, stCount, lakeMinZ, lakeCum } };
     // line segments: coast | border | lake shores (by minZoom) | admin-1 (sorted by minZoom)
     const arcs = W.countryArcs(L);
     const A1 = W.admin1 ? W.admin1(Math.min(L, W.admin1Levels.length - 1)) : [];
@@ -2917,6 +3053,90 @@ var earcut = (function () {
     let r;
     do { r = it.next(); } while (!r.done);
     GLR.upload(L, r.value);
+  }
+  // The globe's fills: level 0 triangulated as for the flat map, then every triangle edge longer than 2.5 degrees is
+  // split at its midpoint (on the sphere; along the map for an edge spanning more than 90 degrees of longitude, which
+  // the flat triangulation means the long way round), so triangles follow the curve and can be clipped at the rim.
+  // Splits depend only on the edge, and midpoints are shared, so neighbouring triangles always match (no cracks).
+  function* buildGlobe() {
+    const d = yield* buildLevel(0, true);
+    const pos0 = d.pos, idx0 = d.idx, nT = idx0.length / 3;
+    let nv = pos0.length >> 1, cap = Math.max(4096, nv * 2);
+    let P3 = new Float64Array(cap * 3), pp = new Float32Array(cap * 2);
+    const grow = () => {
+      cap *= 2;
+      const a = new Float64Array(cap * 3); a.set(P3); P3 = a;
+      const b = new Float32Array(cap * 2); b.set(pp); pp = b;
+    };
+    for (let k = 0; k < nv; k++) {
+      const x = pos0[2 * k], y = pos0[2 * k + 1], lo = (x * 360 - 180) * RAD, la = (90 - y * 180) * RAD;
+      P3[3 * k] = Math.cos(la) * Math.cos(lo); P3[3 * k + 1] = Math.cos(la) * Math.sin(lo); P3[3 * k + 2] = Math.sin(la);
+      pp[2 * k] = x; pp[2 * k + 1] = y;
+    }
+    yield;
+    const T2 = Math.pow(2 * Math.sin(GLOBE_SPLIT / 2 * RAD), 2), mids = new Map();
+    // (a vertex on a pole - Antarctica's southern edge - is the same point at every longitude: an edge from it is the
+    // meridian of its other end, so it is never "the long way round")
+    const pole = (i) => pp[2 * i + 1] < 1e-4 || pp[2 * i + 1] > 1 - 1e-4;
+    const far = (i, j) => Math.abs(pp[2 * i] - pp[2 * j]) > 0.25 && !pole(i) && !pole(j);
+    const d2 = (i, j) => { if (far(i, j)) return 4; const a = 3 * i, b = 3 * j; return (P3[a] - P3[b]) ** 2 + (P3[a + 1] - P3[b + 1]) ** 2 + (P3[a + 2] - P3[b + 2]) ** 2; };
+    const mid = (i, j) => {
+      const key = i < j ? i * 67108864 + j : j * 67108864 + i;
+      let m = mids.get(key);
+      if (m !== undefined) return m;
+      if (nv >= cap) grow();
+      let x, y;
+      if (far(i, j)) { x = (pp[2 * i] + pp[2 * j]) / 2; y = (pp[2 * i + 1] + pp[2 * j + 1]) / 2; }
+      else {
+        const a = 3 * i, b = 3 * j;
+        const X = P3[a] + P3[b], Y = P3[a + 1] + P3[b + 1], Z = P3[a + 2] + P3[b + 2], l = Math.hypot(X, Y, Z) || 1;
+        x = (Math.atan2(Y, X) / RAD + 180) / 360; y = (90 - Math.asin(clamp(Z / l, -1, 1)) / RAD) / 180;
+        const xa = pole(i) ? pp[2 * j] : pole(j) ? pp[2 * i] : (pp[2 * i] + pp[2 * j]) / 2;   // same side of the 180th meridian as its edge
+        if (x - xa > 0.5) x -= 1; else if (xa - x > 0.5) x += 1;
+      }
+      const lo = (x * 360 - 180) * RAD, la = (90 - y * 180) * RAD;
+      P3[3 * nv] = Math.cos(la) * Math.cos(lo); P3[3 * nv + 1] = Math.cos(la) * Math.sin(lo); P3[3 * nv + 2] = Math.sin(la);
+      pp[2 * nv] = x; pp[2 * nv + 1] = y;
+      mids.set(key, nv);
+      return nv++;
+    };
+    let out = new Uint32Array(Math.max(4096, idx0.length * 2)), no = 0;
+    const push = (a, b, c) => {
+      if (no + 3 > out.length) { const o = new Uint32Array(out.length * 2); o.set(out); out = o; }
+      out[no++] = a; out[no++] = b; out[no++] = c;
+    };
+    const tri = (a, b, c, depth) => {
+      const ab = d2(a, b), bc = d2(b, c), ca = d2(c, a);
+      if ((ab <= T2 && bc <= T2 && ca <= T2) || depth > 30) { push(a, b, c); return; }
+      if (ab >= bc && ab >= ca) { const m = mid(a, b); tri(a, m, c, depth + 1); tri(m, b, c, depth + 1); }
+      else if (bc >= ca) { const m = mid(b, c); tri(a, b, m, depth + 1); tri(a, m, c, depth + 1); }
+      else { const m = mid(c, a); tri(a, b, m, depth + 1); tri(m, b, c, depth + 1); }
+    };
+    const mapT = new Uint32Array(nT + 1);
+    for (let t = 0; t < nT; t++) {
+      mapT[t] = no;
+      tri(idx0[3 * t], idx0[3 * t + 1], idx0[3 * t + 2], 0);
+      if ((t & 1023) === 0 && timeUp()) yield;
+    }
+    mapT[nT] = no;
+    const M = (off) => mapT[off / 3], m0 = d.meta;
+    const cStart = new Uint32Array(NC), cCount = new Uint32Array(NC);
+    for (let ci = 0; ci < NC; ci++) { cStart[ci] = M(m0.cStart[ci]); cCount[ci] = M(m0.cStart[ci] + m0.cCount[ci]) - cStart[ci]; }
+    const landCount = M(m0.landCount), lakeCum = new Uint32Array(m0.lakeCum.length);
+    for (let k = 0; k < lakeCum.length; k++) lakeCum[k] = M(m0.landCount + m0.lakeCum[k]) - landCount;
+    const stStart = [], stCount = [];
+    for (let si = 0; si < m0.stStart.length; si++) { stStart[si] = M(m0.stStart[si]); stCount[si] = M(m0.stStart[si] + m0.stCount[si]) - stStart[si]; }
+    return {
+      pos: pp.slice(0, nv * 2), idx: out.slice(0, no), segs: null,
+      meta: { cStart, cCount, landCount, stStart, stCount, lakes: prefixCounter(m0.lakeMinZ, lakeCum, landCount), tris: no / 3, verts: nv }
+    };
+  }
+  function buildGlobeNow() {
+    sliceEnd = Infinity;
+    const it = buildGlobe();
+    let r;
+    do { r = it.next(); } while (!r.done);
+    GLR.uploadGlobe(r.value);
   }
   let lastDrawn = -1;
   function onLevelReady(L) {
@@ -3229,11 +3449,14 @@ var earcut = (function () {
     if (renderer === 'canvas2d') return;
     if (!C2D.init()) { renderer = 'none'; return; }
     renderer = 'canvas2d';
+    if (globeOn) setGlobe(false, true);       // the globe needs WebGL2: back to the flat map (the preference is kept)
+    bGlobe.hidden = true;
     glCanvas.style.display = 'none';
     c2dCanvas.style.display = 'block';
   }
   function useGL() {
     renderer = 'webgl2';
+    bGlobe.hidden = false;
     c2dCanvas.style.display = 'none';
     glCanvas.style.display = 'block';
     if (c2dCanvas.width > 1) { c2dCanvas.width = 1; c2dCanvas.height = 1; }   // free the fallback's backing store
@@ -3258,7 +3481,7 @@ var earcut = (function () {
   glCanvas.addEventListener('webglcontextrestored', () => {
     if (forced === '2d') return;
     if (GLR.setup()) {
-      try { buildNow(0); useGL(); ensureLevels(); } catch (e) { use2D(); }
+      try { buildNow(0); useGL(); if (globePref) setGlobe(true, true); ensureLevels(); } catch (e) { use2D(); }
     }
     requestFrame();
   });
@@ -3275,7 +3498,7 @@ var earcut = (function () {
   let hoverCi = -1;
   let visited = new Set(), visitedKey = '';
   function renderMap() {
-    const st = { view, want: wantLevel(view), hover: hoverCi, visited, visitedStates, visitedKey, drawnLevel: -1 };
+    const st = { view, want: wantLevel(view), hover: hoverCi, visited, visitedStates, visitedKey, drawnLevel: -1, globe: globeOn };
     let drew = false;
     if (renderer === 'webgl2') {
       applyCanvasSize();
@@ -3422,7 +3645,7 @@ var earcut = (function () {
   // that country within about 12 px (15..80 km); just off a coast, the coastal place within the same radius or 4.2 px
   // (up to 160 km), because at the whole-world view a click cannot be placed more precisely than a few px.
   function radiusKm(lat) {
-    const kmPerPx = 40075.017 * Math.cos(lat * RAD) / scaleOf(targetView());
+    const kmPerPx = globeOn ? 6371 / globeR(targetView()) : 40075.017 * Math.cos(lat * RAD) / scaleOf(targetView());
     const land = clamp(12 * kmPerPx, 15, 80);
     return { land, coast: clamp(Math.max(land, 4.2 * kmPerPx), 15, 160), kmPerPx };
   }
@@ -3547,10 +3770,10 @@ var earcut = (function () {
   function describeAt(x, y) {
     const key = [x, y, view.cx, view.cy, view.z, layout.s0, layout.ax, layout.ay, targetView().z].join(',');
     if (descCache && descCache.key === key) return descCache.d;
-    const w = cssToWorld(x, y);
+    const ll = screenLL(x, y);
     let d = null;
-    if (w.y >= 0 && w.y <= 1) {
-      const lon = round4(normLon(lonOfX(w.x))), lat = round4(latOfY(w.y)), r = radiusKm(lat);
+    if (ll) {
+      const lon = round4(ll.lon), lat = round4(ll.lat), r = radiusKm(lat);
       let g = W.describe(lon, lat, { radiusKm: r.land, coastRadiusKm: r.coast });
       // Zoomed out, a click cannot be placed more precisely than a px or two: a much more important place within 1.6 px,
       // even across a border, names the pin (Singapore rather than Johor Bahru, Hong Kong rather than Shenzhen).
@@ -3595,7 +3818,7 @@ var earcut = (function () {
   function notablePlaceNear(x, y, exclude, head) {
     const P = W.places;
     if (!P) return false;
-    const B = boxLL([x - 3.5, y - 3.5, x + 3.5, y + 3.5]), lim = head ? Math.max(4, webZoom(view) + 2) : Math.max(5, webZoom(view) + 3.2);
+    const B = boxNear(x, y, 3.5), lim = head ? Math.max(4, webZoom(view) + 2) : Math.max(5, webZoom(view) + 3.2);
     if (head) {
       const d = describeAt(x, y), i = d ? d.place : -1;
       if (!(i >= 0) || P.minZoom[i] > lim || P.name[i] === exclude) return false;
@@ -3611,6 +3834,14 @@ var earcut = (function () {
       if (Math.hypot(px - x, py - y) <= 3.5) return true;
     }
     return false;
+  }
+  // Lon/lat bounds [w, s, e, n] around a screen point (flat: exact; globe: a generous box from the scale at the centre)
+  function boxNear(x, y, r) {
+    if (!globeOn) return boxLL([x - r, y - r, x + r, y + r]);
+    const ll = globeInv(x, y);
+    if (!ll) return [0, 0, -1, -1];
+    const dLat = 3 * r / globeR(view) / RAD + 0.01, dLon = dLat / Math.max(0.05, Math.cos(ll.lat * RAD));   // 3x: foreshortening
+    return [ll.lon - dLon, ll.lat - dLat, ll.lon + dLon, ll.lat + dLat];
   }
   function pinTarget(x, y, bodyId, head) {
     const d = describeAt(x, y);
@@ -3885,7 +4116,7 @@ var earcut = (function () {
     return [x0, y0, x0 + (best.e - best.w) / 360 * s, y0 + (mercY(best.s) - mercY(best.n)) * s];
   }
   function updateLabels() {
-    const key = [view.cx, view.cy, view.z, size.cssW, size.cssH, size.devW, pinMode, pinsVer, layout.s0, layout.ax, layout.ay, selectedId].join(',');
+    const key = [view.cx, view.cy, view.z, size.cssW, size.cssH, size.devW, pinMode, pinsVer, layout.s0, layout.ax, layout.ay, selectedId, globeOn].join(',');
     if (key === labelKey) return;
     labelKey = key;
     const Wc = size.cssW, Hc = size.cssH, dpr = size.devW / size.cssW;
@@ -3912,9 +4143,10 @@ var earcut = (function () {
     // A pin's name shows once you have zoomed in to its country (the country under the view centre), and for every
     // pin on screen from 4x; never at the whole-world view, where the markers alone show where you have been.
     let focusCi = -1;
-    if (view.z >= 2 - 1e-6) { const vc = cssToWorld(layout.ax, layout.ay); if (vc.y >= 0 && vc.y <= 1) focusCi = W.countryAt(normLon(lonOfX(vc.x)), latOfY(vc.y), Math.min(wantLevel(view), 2)); }
+    if (view.z >= 2 - 1e-6) { const vc = screenLL(layout.ax, layout.ay); if (vc) focusCi = W.countryAt(vc.lon, vc.lat, Math.min(wantLevel(view), 2)); }
+    // (the globe names every pin on its near side from 2x; it shows no country or city names: those are the flat map's)
     const nameShown = (p) => {
-      if (view.z >= 4 - 1e-6) return true;
+      if (view.z >= (globeOn ? 2 : 4) - 1e-6) return true;
       if (view.z < 2 - 1e-6 || focusCi < 0) return false;
       const ci = p.iso ? W.byIso3.get(p.iso) : null;
       return ci === focusCi;
@@ -3950,10 +4182,10 @@ var earcut = (function () {
     const wzG = Math.max(wz, 2.0), fsAdj = clamp((wz - 2.45) * 2.5, -2, 0);   // small whole-world views still get the major names
     for (const c of W.countries) if (c.labelPt && c.minLabel <= wzG - 0.1) cands.push(c);
     cands.sort((a, b) => a.labelRank - b.labelRank || a.minLabel - b.minLabel);
-    if (view.z < 2 - 1e-6) cands.length = 0;   // whole-world view: no country names (hover shows them; they appear once zoomed in)
+    if (view.z < 2 - 1e-6 || globeOn) cands.length = 0;   // whole-world view and globe: no country names (hover shows them)
     const big = Math.max(Wc, Hc), LS = Math.min(wantLevel(view), 2), lakes = view.z >= 4;
     let centreCi = -1;
-    if (view.z >= 2) { const vc = cssToWorld(layout.ax, layout.ay); if (vc.y >= 0 && vc.y <= 1) centreCi = W.countryAt(normLon(lonOfX(vc.x)), latOfY(vc.y), LS); }
+    if (view.z >= 2 && !globeOn) { const vc = cssToWorld(layout.ax, layout.ay); if (vc.y >= 0 && vc.y <= 1) centreCi = W.countryAt(normLon(lonOfX(vc.x)), latOfY(vc.y), LS); }
     const DBG = Array.isArray(window.__lblDbg) ? window.__lblDbg : null;
     if (DBG) DBG.length = 0;
     const POS = [[0, 0], [0, -1.5], [0, 1.5], [0, -3], [0, 3], [0, -4.5], [0, 4.5],
@@ -4004,7 +4236,7 @@ var earcut = (function () {
     //    crosses one (Geneva, Basel), the side crossing least is used, as long as it collides with nothing. Places come
     //    most important first, so a major border city is labelled before the small towns around it.
     const P = W.places;
-    if (P && view.z >= 1.9) {
+    if (P && view.z >= 1.9 && !globeOn) {
       const maxN = Math.round(clamp(Wc * Hc / 40000, 12, 52));
       const lim = wz - 0.6;
       for (let i = 0; i < P.n && n.lbl < maxN; i++) {
@@ -4174,8 +4406,9 @@ var earcut = (function () {
     const p = pins.find((q) => q.id === selectedId);
     if (!p) return;
     const tv = targetView();
-    const z = clamp(Math.max(8, tv.z * 4), 1, maxZoom());
     intent = null;
+    if (globeOn) { animateTo({ cx: xOfLon(normLon(p.lon)), cy: mercY(clamp(p.lat, -GLOBE_LAT_MAX, GLOBE_LAT_MAX)), z: clamp(Math.max(2, tv.z * 2), 1, GLOBE_MAX) }, { dur: 450 }); return; }
+    const z = clamp(Math.max(8, tv.z * 4), 1, maxZoom());
     animateTo({ cx: xOfLon(normLon(p.lon)), cy: mercY(clamp(p.lat, -PIN_LAT, PIN_LAT)), z }, { dur: 450 });
   }));
   cRemove.addEventListener('click', once(() => {
@@ -4372,8 +4605,8 @@ var earcut = (function () {
     if (mouse.pin) { if (anim) { setHover(-1); hideTip(); } else pinTip(); return; }
     const inW = mouse.onMap && inWorld(mouse.x, mouse.y);
     if (!inW || anim) { setHover(-1); if (!inW) hideTip(); return; }
-    const w = cssToWorld(mouse.x, mouse.y);
-    const ci = W.countryAt(normLon(lonOfX(w.x)), latOfY(w.y));
+    const ll = screenLL(mouse.x, mouse.y);
+    const ci = ll ? W.countryAt(ll.lon, ll.lat) : -1;
     setHover(ci);
     if (pinMode) {
       const tg = pinTarget(mouse.x, mouse.y, null);
@@ -4438,6 +4671,44 @@ var earcut = (function () {
     if (dim !== dimmed) { document.body.classList.toggle('dim', dim); dimmed = dim; }
   }
 
+  /* ---------- globe view toggle ---------- */
+  // Switching keeps looking at the same place at about the same scale: from the whole-world view the globe starts at
+  // its resting position, and a globe zoomed out to about the size of the whole world returns to the whole-world view.
+  // The choice is remembered (WebGL2 only; with the fallback renderer the flat map is used and the choice is kept).
+  function setGlobe(on, keepPref) {
+    on = !!on;
+    if (on && renderer !== 'webgl2') return false;
+    if (on && !GLR.hasGlobe()) {
+      try { buildGlobeNow(); } catch (e) { window.__map && (window.__map.lastError = String(e && e.stack || e)); return false; }
+    }
+    if (!keepPref) { globePref = on; try { window.localStorage.setItem(GLOBE_KEY, on ? '1' : '0'); } catch (e) { /* not saved */ } }
+    if (on === globeOn) return true;
+    if (anim) { view = anim.to; anim = null; normalizeView(); }
+    const v = view, lat = clamp(latOfY(v.cy), -GLOBE_LAT_MAX, GLOBE_LAT_MAX), k = 2 * PI * globeR0() * Math.max(0.2, Math.cos(lat * RAD)) / layout.s0;
+    if (on) {
+      const fromHome = v.z <= 1 + 1e-6;
+      globeOn = true;
+      view = fromHome ? homeView() : clampView({ cx: v.cx, cy: mercY(lat), z: v.z / k });
+    } else {
+      const zf = v.z * k;
+      globeOn = false;
+      view = zf < 1.5 ? homeView() : clampView({ cx: v.cx, cy: mercY(lat), z: Math.min(zf, maxZoom()) });
+    }
+    normalizeView();
+    document.body.classList.toggle('globe', globeOn);
+    bGlobe.setAttribute('aria-pressed', String(globeOn));
+    bGlobe.setAttribute('aria-label', globeOn ? 'Flat map' : 'Globe view');
+    bGlobe.dataset.tip = globeOn ? 'Flat map' : 'Globe view';
+    descCache = null; labelKey = ''; intent = null; lastClick = null;
+    closeCard(); hideTip(); setHover(-1, true);
+    GLR.fullNext();
+    zoomButtons();
+    labelsMoving();
+    requestFrame();
+    return true;
+  }
+  bGlobe.addEventListener('click', once(() => setGlobe(!globeOn)));
+
   /* ---------- input ---------- */
   const isMapTarget = (t) => t === glCanvas || t === c2dCanvas;
   let drag = null, suppressClick = false, lastClick = null, lastDpr = devicePixelRatio || 1, lastMoveT = 0, hintShown = false;
@@ -4457,10 +4728,17 @@ var earcut = (function () {
         drag.moved = true;
         // No drag-pan while the world is narrower than the screen (around the whole-world view): it would turn the single
         // drawn copy and slice continents, and the resting wallpaper never moves from stray input.
-        drag.locked = scaleOf(targetView()) < size.cssW;
+        drag.locked = !globeOn && scaleOf(targetView()) < size.cssW;
         if (!drag.locked) { hideTip(); setHover(-1); labelsMoving(); }
       }
       if (drag.moved && drag.locked) return;
+      if (drag.moved && globeOn) {   // the globe turns under the cursor
+        const R = globeR(view);
+        anim = null;
+        view = clampView({ cx: drag.cx - dx / (2 * PI * R), cy: mercY(clamp(drag.lat + dy / R / RAD, -GLOBE_LAT_MAX, GLOBE_LAT_MAX)), z: view.z });
+        requestFrame();
+        return;
+      }
       if (drag.moved) {
         const s = scaleOf(view);
         anim = null;
@@ -4479,7 +4757,7 @@ var earcut = (function () {
   function onDown(e) {
     if (e.button !== 0) return;
     suppressClick = false;
-    drag = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy, moved: false };
+    drag = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy, lat: latOfY(view.cy), moved: false };
   }
   function onUp() {
     if (drag && drag.moved) {
@@ -4514,6 +4792,11 @@ var earcut = (function () {
     if (!inWorld(e.clientX, e.clientY)) return;      // beside the single world copy (under the HUD column at 1x) or below its crop
     if (pinMode) { pinModeClick(e, null); lastClick = null; return; }
     const tv = targetView();
+    if (globeOn) {        // a click turns the globe to bring that place to the front
+      const ll = CONFIG.globeClickTurn ? globeInv(e.clientX, e.clientY) : null;
+      if (ll) animateTo({ cx: xOfLon(ll.lon), cy: mercY(clamp(ll.lat, -GLOBE_LAT_MAX, GLOBE_LAT_MAX)), z: tv.z }, { dur: 450 });
+      return;
+    }
     // The resting wallpaper never moves from a stray desktop click: at the whole-world view normal clicks do nothing
     // (the first such click in a session explains how to zoom in or pin).
     if (CONFIG.ignoreClicksAtWorldView && tv.z <= 1 + 1e-6) {
@@ -4566,12 +4849,14 @@ var earcut = (function () {
     else if (k === '-' || k === '_') zoomButton(-1);
     else if (k === '0' || k === 'Home') goHome();
     else if (k === 'p' || k === 'P') setPinMode(!pinMode);
+    else if (k === 'g' || k === 'G') setGlobe(!globeOn);
     else if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'Z')) undo();
     else if (k === 'Escape') { if (!xPanel.hidden) closeExport(); else if (selectedId) closeCard(); else if (pinMode) setPinMode(false); }
     else if (k.startsWith('Arrow')) {
       const tv = targetView(), s = scaleOf(tv), step = 0.25;
       const dx = k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0, dy = k === 'ArrowUp' ? -1 : k === 'ArrowDown' ? 1 : 0;
-      animateTo({ cx: tv.cx + dx * step * size.cssW / s, cy: tv.cy + dy * step * size.cssH / s, z: tv.z }, { dur: 300 });
+      if (globeOn) animateTo({ cx: tv.cx + dx * 20 / 360, cy: mercY(clamp(latOfY(tv.cy) - dy * 15, -GLOBE_LAT_MAX, GLOBE_LAT_MAX)), z: tv.z }, { dur: 300 });
+      else animateTo({ cx: tv.cx + dx * step * size.cssW / s, cy: tv.cy + dy * step * size.cssH / s, z: tv.z }, { dur: 300 });
     } else return;
     e.preventDefault();
   });
@@ -4785,13 +5070,15 @@ var earcut = (function () {
       return x >= 0 && y >= 0 && x <= size.cssW && y <= size.cssH && inWorldX(x) ? [x, y] : null;
     },
     state() {
-      return { zoom: view.z, center: [normLon(lonOfX(view.cx)), latOfY(view.cy)], pinMode, pins: pins.map((p) => Object.assign({}, p)), renderer, level: lastDrawn, storage: storageOK };
+      return { zoom: view.z, center: [normLon(lonOfX(view.cx)), latOfY(view.cy)], globe: globeOn, pinMode, pins: pins.map((p) => Object.assign({}, p)), renderer, level: lastDrawn, storage: storageOK };
     },
     debug() {
       return { hover: hoverCi, hoverName: hoverCi >= 0 ? W.countries[hoverCi].name : '', undo: undoStack.length, size: Object.assign({}, size), layout: Object.assign({}, layout), gpu: renderer === 'webgl2' ? GLR.stats() : null, myPinsBroken, storeRecovered, labels: { cl: pools.cl.filter((e) => e.style.display !== 'none').map((e) => e.textContent), lbl: pools.lbl.filter((e) => e.style.display !== 'none').map((e) => e.textContent), plbl: pools.plbl.filter((e) => e.style.display !== 'none').map((e) => e.textContent) } };
     },
     setView(lon, lat, z) { setView({ cx: xOfLon(lon), cy: mercY(lat), z: z || view.z }); afterSettle(); },
     theme() { return theme; },
+    setGlobe(on) { return setGlobe(on); },
+    globeAt(x, y) { return globeOn ? globeInv(x, y) : null; },
     sunTimes(ms) { return sunTimes(ms, CONFIG.nightLat, CONFIG.nightLon); },
     visitedStates() { return Array.from(visitedStates).map((si) => US.states[si].postal).sort(); },
     setColor(name, h, a) { C[name] = hex(h, a); GLR.invalidate(); C2D.invalidate(); requestFrame(); },
@@ -4805,6 +5092,12 @@ var earcut = (function () {
   updateStats();
   computeLayout();             // the home fit includes the pins
   view = homeView();
+  {
+    const qg = new URLSearchParams(location.search).get('globe');
+    try { globePref = qg != null ? qg === '1' : window.localStorage.getItem(GLOBE_KEY) === '1'; } catch (e) { globePref = qg === '1'; }
+    if (renderer !== 'webgl2') bGlobe.hidden = true;
+    if (globePref && renderer === 'webgl2') setGlobe(true, true);
+  }
   syncPinEls();
   bUndo.disabled = true;
   zoomButtons();
