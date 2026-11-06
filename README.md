@@ -1,8 +1,11 @@
 # World Map Wallpaper
 
-An interactive world map desktop wallpaper for Windows, styled as an antique parchment map. You can zoom in and out and drop pins on places you have been. A 24-hour clock and a monthly calendar sit in the top right.
+An interactive world map desktop wallpaper for Windows, styled as an antique parchment map with shaded relief (topography) and engraved water lines along the coasts. You can zoom in and out, switch to a globe, drop pins on places you have been and stick paper notes on the wallpaper. A 24-hour clock and a monthly calendar sit in the top right.
 
-It is one self-contained file, `index.html` (about 3 MB). The map data is built in, so it works offline and makes no internet requests. Map data: Made with Natural Earth (public domain).
+It is one self-contained file, `index.html` (about 3.5 MB). All data is built in, so it works offline and makes no internet requests.
+
+- Map data: Made with Natural Earth (public domain).
+- Relief: computed from the 0-6400 m elevation image that ships with the [three-globe](https://www.npmjs.com/package/three-globe) npm package (MIT licence). The image's values match NASA's Blue Marble topography product, which is public domain, but the package does not state its source.
 
 ## Install (Lively Wallpaper)
 
@@ -25,7 +28,9 @@ The toolbar is in the bottom right:
 | **Pin** | Turns pin mode on. Click the map to drop a pin. The button changes to **Done**; click it (or Done in the top banner) to stop. Pin mode also turns itself off after 2 minutes without a drop. |
 | Undo | Undoes the last pin you dropped or removed. |
 | − / + | Zoom out / zoom in. |
-| Globe | Back to the whole world. |
+| World | Back to the whole world (on the globe: back to its resting position). |
+| Globe on a stand | Switches between the flat map and the globe. |
+| Note | Adds a paper note to the wallpaper (see Notes below). |
 | Export | Shows your pins as text, with a Copy button. |
 
 - When zoomed in, clicking the map glides it to centre on that point. At the whole-world view, ordinary clicks do nothing, so stray desktop clicks never move the wallpaper.
@@ -35,6 +40,28 @@ The toolbar is in the bottom right:
 - A ledger below the whole-world map counts the cities, countries, continents and US states you have pinned (it hides while you are zoomed in). US states are worked out from Natural Earth state outlines; Washington, D.C. counts as a city but not a state.
 - Countries with a pin get a red-ochre wash. In the United States the wash is applied state by state, to the states your pins are in.
 - After sunset in Barcelona the map switches to a dark night palette, and back at sunrise (checked once a minute; no internet needed).
+- Land carries shaded relief, lit from the north-west. The relief data is about 20 km per pixel, so it is crisp at the whole-world view, soft by 4x and fades to about half strength by 16x, where it would only be a blur.
+- Three thin lines and a lighter band of shallow water follow the coasts, like the water lining on old engraved maps. They are static (no animation). Islands smaller than about 10 px on screen get none, so the Pacific is not covered in bullseyes at the world view.
+
+## Globe
+
+Click the globe-on-a-stand button to switch to a globe (click it again for the flat map). The choice is remembered.
+
+- A click on the globe turns it to bring that place to the front. In a browser you can also drag it or use the arrow keys.
+- − / + zoom the globe from 1x to 4x. For a closer look, switch back: the flat map opens on the same place at about the same scale.
+- Hover names the country; Pin mode, pin cards and Undo work as on the flat map. Pin names show from 2x; country and city names are only on the flat map.
+- The globe is drawn by the same WebGL code and data as the flat map (about 2.3 MB of extra graphics memory, built once, in well under a second, the first time you open it). It redraws only when something changes and never spins on its own.
+- It needs WebGL2. With the simpler fallback renderer (`?renderer=2d`, or a PC without WebGL2) the button is hidden and the flat map is used.
+
+## Notes
+
+Click **Note** in the toolbar to add a paper note to the wallpaper. A keyboard appears beside it.
+
+- Lively passes only mouse clicks and movement to a wallpaper, not key presses (turning keyboard input on hides your desktop icons). So you type by clicking the on-screen keys. A real keyboard also works where it reaches the page, for example when the file is open in a browser.
+- The keyboard has letters, a symbols page (#+=) and accented letters (àé). It starts a capital after `.` `!` `?` and at the start of a note. Click **Done**, or anywhere outside the note, to finish. It closes on its own after 2 minutes without use.
+- Click a note for **Edit**, **Move**, **Colour** and **Remove**. Move: the note follows the cursor and your next click puts it down (dragging does not reach a wallpaper in Lively). Remove can be undone with Undo in the toolbar.
+- Notes stay where you put them on the screen, whatever the map shows. Map labels keep clear of them. Up to 12 notes; an empty note is not kept.
+- Notes are saved in the wallpaper's browser storage only. They are not part of Export, so if that storage is wiped, they are gone. With one wallpaper per monitor, every screen shows the same notes.
 
 ## Keeping your pins safe
 
@@ -65,10 +92,14 @@ Edit the `CONFIG` block near the top of the main `<script>` in `index.html`:
 | `pinModeTimeoutSec` | 120 | Pin mode turns itself off after this long without a drop (0 = never) |
 | `iconColumnPx` | 220 | Space kept clear on the left for desktop icons and folders, about two icon columns (0 = off) |
 | `coastGlow` | true | Very faint glow along coastlines |
+| `relief` | 1 | Shaded relief on land: 0 = off, 1 = normal, up to 2 = stronger |
+| `waterLines` | true | Water lines and the shallow-water band along the coasts |
+| `globeLon`, `globeLat` | -40, 28 | Where the globe faces at rest (between the Americas and Europe) |
+| `globeClickTurn` | true | A click on the globe turns it to that place |
 | `dimControls` | true | Toolbar fades back when the cursor is away from it |
 
-When the file is opened in a normal browser, the scroll wheel and dragging also work, and adding `?renderer=2d` to the address forces the simpler non-WebGL renderer.
+When the file is opened in a normal browser, the scroll wheel and dragging also work, and adding `?renderer=2d` to the address forces the simpler non-WebGL renderer. `?globe=1` / `?globe=0` opens the globe or the flat map, and `?relief=0`, `?water=0` turn those layers off.
 
 ## Battery
 
-The map does no work while idle: it redraws only when you click or hover, plus once a minute for the day/night shading. The clock updates its text once a second.
+The map does no work while idle, flat or globe: it redraws only when you click or hover, plus once a minute for the day/night shading. Nothing on it is animated at rest (no water or boat animation). The clock updates its text once a second. The relief adds one small texture (about 3 MB of graphics memory); the water lines are computed in a pass the map already made.
