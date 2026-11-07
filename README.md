@@ -1,6 +1,6 @@
 # World Map Wallpaper
 
-An interactive world map desktop wallpaper for Windows, styled as an antique parchment map on a warm stone sea, with faint water lines along the coasts. You can zoom in and out, switch to a globe and drop pins on places you have been. A 24-hour clock and a monthly calendar sit in the top right.
+An interactive world map desktop wallpaper for Windows, styled as an antique parchment map on a warm stone sea, with faint water lines along the coasts. You can zoom in and out, switch to a globe and drop pins on places you have been. A 24-hour clock sits above a monthly calendar in the top right.
 
 It is one self-contained file, `index.html` (about 3.4 MB). The map data is built in, so it works offline and makes no internet requests. Map data: Made with Natural Earth (public domain).
 
@@ -65,7 +65,7 @@ Edit the `CONFIG` block near the top of the main `<script>` in `index.html`:
 |---|---|---|
 | `use24Hour` | true | 24-hour clock |
 | `clockSize` | 0.62 | Width of the time as a share of the calendar's width (1 = as wide as the calendar) |
-| `clockAlign` | 'center' | The time centred over the date and the calendar; 'right' or 'left' lines it up with their edge instead |
+| `clockAlign` | 'center' | The time centred above the calendar; 'right' or 'left' lines it up with the calendar's edge instead |
 | `showSeconds` | false | Show seconds |
 | `weekStartsMonday` | true | Calendar week start |
 | `nightMode` | 'auto' | Dark "lamplit" map from sunset to sunrise at `nightLat`/`nightLon`; 'on' = always dark, 'off' = never |
