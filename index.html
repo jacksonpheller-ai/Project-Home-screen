@@ -662,7 +662,7 @@ window.MY_PINS = [
 /* ---------- Settings: edit these, or add ?h24=0&sec=1&night=0 etc. to the URL ---------- */
 const CONFIG = {
   use24Hour: true,         // true for 14:05, false for 2:05 PM
-  clockSize: 0.62,         // width of the time as a share of the calendar's width (1 = as wide as the calendar)
+  clockSize: 1,            // width of the time as a share of the calendar's width (1 = as wide as the calendar)
   clockAlign: 'center',    // the time above the calendar: 'center', 'right' or 'left'
   showSeconds: false,
   weekStartsMonday: true,
@@ -779,7 +779,7 @@ function alignHud() {
     const ref = CONFIG.showSeconds ? '00:00:00' : '00:00';
     // The time spans CONFIG.clockSize of the calendar's width, centred over it (or against its right or left edge,
     // CONFIG.clockAlign); its ink, not its letter boxes, is what is placed.
-    const Wt = W * Math.min(1, Math.max(0.3, +CONFIG.clockSize || 0.62));
+    const Wt = W * Math.min(1, Math.max(0.3, +CONFIG.clockSize || 1));
     const off = CONFIG.clockAlign === 'right' ? W - Wt : CONFIG.clockAlign === 'left' ? 0 : (W - Wt) / 2;
     const key = Wt + '|' + cs.fontSize + '|' + cs.fontFamily + '|' + ref;
     if (key !== clockFitKey) { const g = clockGeom(ref, cs, 100); clockFs = 100 * Wt / (g.inkR - g.inkL); clockFitKey = key; }

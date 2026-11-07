@@ -64,7 +64,7 @@ Edit the `CONFIG` block near the top of the main `<script>` in `index.html`:
 | Setting | Default | What it does |
 |---|---|---|
 | `use24Hour` | true | 24-hour clock |
-| `clockSize` | 0.62 | Width of the time as a share of the calendar's width (1 = as wide as the calendar) |
+| `clockSize` | 1 | Width of the time as a share of the calendar's width (1 = as wide as the calendar) |
 | `clockAlign` | 'center' | The time centred above the calendar; 'right' or 'left' lines it up with the calendar's edge instead |
 | `showSeconds` | false | Show seconds |
 | `weekStartsMonday` | true | Calendar week start |
