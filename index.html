@@ -685,9 +685,11 @@ const CONFIG = {
   doubleClickZoom: false,  // two quick clicks on the same spot zoom in (off: an accidental double click does nothing)
   hoverHideSec: 4,         // hide the tooltip and outline after this long without mouse movement
   coastGlow: true,         // very faint glow along coastlines
-  waterLines: true,        // two faint lines along the coasts and a lighter band of shallow water (static)
   globeLon: -40, globeLat: 28,   // where the globe view faces at rest (between the Americas and Europe)
   globeClickTurn: true,    // in the globe view a click turns the globe to bring that place to the front
+  globeSpin: 3,            // the globe turns by itself, in degrees per second (0 = it stays still). It stops while the
+                           // cursor moves on the desktop and starts again hoverHideSec after it stops
+  globeSpinFps: 30,        // frames per second while it turns (fewer = less work for the graphics chip)
   dimControls: true        // the toolbar fades back when the cursor is not near it
 };
 (() => {
@@ -703,7 +705,7 @@ const CONFIG = {
   if (q.has('night')) CONFIG.showNight = q.get('night') === '1';
   if (q.has('theme')) CONFIG.nightMode = q.get('theme');
   if (q.has('ledger')) CONFIG.showLedger = q.get('ledger') === '1';
-  bool('water', 'waterLines'); num('glon', 'globeLon'); num('glat', 'globeLat');
+  num('glon', 'globeLon'); num('spin', 'globeSpin'); num('spinfps', 'globeSpinFps'); num('glat', 'globeLat');
   bool('ignoreclicks', 'ignoreClicksAtWorldView'); bool('dblzoom', 'doubleClickZoom'); bool('glow', 'coastGlow');
 })();
 
@@ -1651,8 +1653,7 @@ var earcut = (function () {
     grid: hex('#6b4a2a', 0.16),
     coast: hex('#3d2814', 0.88), border: hex('#6b4a2a', 0.55), admin: hex('#6b4a2a', 0.42),
     glow: hex('#6e6248', 0.18),
-    hoverLine: hex('#2a1a0c', 0.95), visitedLine: hex('#7a2418', 0.9), night: hex('#2a1a0a', 0.26),
-    water: hex('#5c5038', 0.34), shelf: hex('#cdc6ad', 0.42)  // water lines along the coasts / the band of shallow water
+    hoverLine: hex('#2a1a0c', 0.95), visitedLine: hex('#7a2418', 0.9), night: hex('#2a1a0a', 0.26)
   };
   // Visited countries: a light red-ochre wash; the deeper oxblood ink outline does the real work.
   C.visited = hex('#e6c08e');
@@ -1668,8 +1669,7 @@ var earcut = (function () {
       coast: hex('#d8bd84', 0.82), border: hex('#b39a6a', 0.5), admin: hex('#b39a6a', 0.34),
       glow: hex('#c9a86a', 0.1),
       hoverLine: hex('#f3e3bb', 0.95), visitedLine: hex('#e08a62', 0.9), night: hex('#000000', 0.3),
-      visited: hex('#5c3a28'), visitedHover: hex('#68432f'),
-      water: hex('#c9a86a', 0.2), shelf: hex('#2e2d26', 0.5)
+      visited: hex('#5c3a28'), visitedHover: hex('#68432f')
     }
   };
 
@@ -2059,7 +2059,7 @@ var earcut = (function () {
   }
   function goHome() { animateTo(homeView(), { dur: 450 }); }
 
-  /* ---------- render scheduling: one rAF per change, never a loop when idle ---------- */
+  /* ---------- render scheduling: one rAF per change, never a loop when idle (except the turning globe) ---------- */
   let rafId = 0, frameWanted = false;
   function requestFrame() {
     frameWanted = true;
@@ -2068,10 +2068,49 @@ var earcut = (function () {
   function frame(now) {
     rafId = 0;
     frameWanted = false;
+    if (!anim && spin.on && spinFrame(now)) return;
     if (anim) stepAnim(now);
     renderMap();
     positionOverlays();
     if (anim) requestFrame(); else afterSettle();
+  }
+  // The turning globe: the only continuous drawing. It runs only in the globe view, while nothing else is going on
+  // (no glide, drag, Pin mode, pin card or Export panel) and the cursor has not moved on the desktop for hoverHideSec;
+  // any mouse movement stops it at once. Frames are spaced to CONFIG.globeSpinFps by a timer (no wake-up on every
+  // display refresh), the speed on screen is the same at every zoom, and labels stay hidden until it stops. It never
+  // runs while the page is hidden (Lively pauses it behind fullscreen apps and, if set, on battery) or with Windows
+  // animations turned off (reduced motion). A PC that cannot keep up (frames averaging over 150 ms apart: software
+  // graphics, a struggling chip) stops it for the rest of the session rather than keep the graphics chip busy.
+  const spin = { on: false, last: 0, timer: 0, avg: 0, n: 0, tooSlow: false };
+  function canSpin() {
+    return globeOn && +CONFIG.globeSpin > 0 && !spin.tooSlow && renderer === 'webgl2' && !reducedMotion && !document.hidden && !anim && !drag &&
+      !pinMode && card.hidden && xPanel.hidden && performance.now() - lastMoveT >= Math.max(1, CONFIG.hoverHideSec || 4) * 1000;
+  }
+  function maybeSpin() {
+    if (!canSpin()) return;
+    if (!spin.on) { spin.on = true; spin.last = performance.now(); spin.n = 0; spin.avg = 0; hideTip(); labelsMoving(); }
+    if (!rafId && !spin.timer) requestFrame();
+  }
+  function stopSpin() {
+    if (!spin.on) return;
+    spin.on = false;
+    clearTimeout(spin.timer); spin.timer = 0;
+    requestFrame();                      // one ordinary frame: labels, hover and detail levels catch up
+  }
+  // one frame of the turning globe; false when it should stop (the caller then draws an ordinary frame)
+  function spinFrame(now) {
+    if (!canSpin()) { spin.on = false; clearTimeout(spin.timer); spin.timer = 0; return false; }
+    const gapMs = now - spin.last, dt = clamp(gapMs / 1000, 0, 0.1);
+    spin.last = now;
+    if (spin.n++ > 2) spin.avg = spin.avg ? spin.avg * 0.9 + gapMs * 0.1 : gapMs;   // (the first frames include start-up)
+    if (spin.n > 25 && spin.avg > 150) { spin.tooSlow = true; spin.on = false; clearTimeout(spin.timer); spin.timer = 0; return false; }
+    view.cx -= (+CONFIG.globeSpin / 360) * dt / view.z;   // eastward, as the Earth turns
+    normalizeView();
+    renderMap();
+    positionOverlays();
+    const gap = 1000 / clamp(+CONFIG.globeSpinFps || 30, 5, 60);
+    spin.timer = setTimeout(() => { spin.timer = 0; if (spin.on) requestFrame(); }, Math.max(0, gap - 10));
+    return true;
   }
   function afterSettle() {
     // While the world is narrower than the screen its single drawn copy is always the home-centred one: any other
@@ -2084,6 +2123,7 @@ var earcut = (function () {
     updateLabels();
     ensureLevels();
     schedulePrune();
+    maybeSpin();
   }
 
   /* ---------- sun position (subsolar point) for the night shade ---------- */
@@ -2141,20 +2181,6 @@ var earcut = (function () {
     return { dpr, scale, axd, ayd, xl, xr, clip, fade, k0: Math.floor(xl), k1: Math.floor(xr - 1e-12) };
   }
   const FADE_W = 0.035;
-  // Water lines: [css px from the coast, strength], nearest first; distances are kept up to WATER_D css px.
-  const WATER_RINGS = [[3.5, 1], [7.5, 0.5]], WATER_D = 11;
-  const WATER_MIN = 10;   // coasts smaller than this many css px across (small islands at the world view) get no water lines
-  // Size of a coast piece in world units (for WATER_MIN): coast arcs are sorted largest first when a level is built.
-  const arcExtent = (a) => Math.max((a.e - a.w) / 360, mercY(a.s) - mercY(a.n));
-  function sizeCounter(ext, cum) {   // count(minExt): number of segments in arcs at least minExt across (ext descending)
-    return {
-      count(minExt) {
-        let lo = 0, hi = ext.length;
-        while (lo < hi) { const mid = (lo + hi) >> 1; if (ext[mid] >= minExt) lo = mid + 1; else hi = mid; }
-        return cum[lo];
-      }
-    };
-  }
 
   /* ================================================================ WebGL2 renderer ================================================================ */
   const GLR = (function () {
@@ -2215,9 +2241,7 @@ var earcut = (function () {
     // Each segment is a screen-space quad; the fragment computes its distance to the segment (a capsule), giving an
     // exact box-filtered coverage for a line of constant device-pixel width. Coverage is MAX-blended into an offscreen
     // RGBA8 target (one channel per line class), so joins never double up and lines look like a single stroke.
-    // Coast segments also write their nearness (1 on the coast, 0 at u_ghw device px from it) into the alpha channel in
-    // the same pass: MAX blending keeps the nearest coast, so alpha is a distance-to-coast field for the water lines,
-    // the shallow-water band and the coast glow.
+    // Coast segments also write a soft 3 device-px glow into the alpha channel in the same pass.
     // Segment endpoints live in an RGBA32F texture and the 6 corners come from gl_VertexID: one plain drawArrays per
     // line class, no instancing (which some drivers and software rasterisers run one instance at a time).
     const LINE_VS = VS_COMMON + `
@@ -2255,7 +2279,7 @@ var earcut = (function () {
         float u = clamp(v_q.x, 0.0, v_len);
         float d = length(vec2(v_q.x - u, v_q.y));
         float c = clamp(u_hw + 0.5 - d, 0.0, 1.0);
-        float g = u_ghw > 0.0 ? clamp(1.0 - d / u_ghw, 0.0, 1.0) : 0.0;   // nearness to the coast (MAX = nearest)
+        float g = u_ghw > 0.0 ? 1.0 - smoothstep(0.35, u_ghw + 0.5, d) : 0.0;
         if (c <= 0.0 && g <= 0.0) discard;
         o = u_mask * c + u_gmask * g;
       }`;
@@ -2286,7 +2310,6 @@ var earcut = (function () {
     // 1 - fade: the land there blends into the ocean and the meridians thin out with it.
     const BG_FS = FS_COMMON + `
       uniform vec3 u_ocean; uniform vec3 u_edge; uniform vec4 u_grid; uniform float u_step; uniform float u_latMin; uniform float u_parMin; uniform float u_fadePass;
-      uniform sampler2D u_cov; uniform float u_wd, u_dpr; uniform vec4 u_water, u_shelf; uniform vec2 u_rings, u_ringA;
       void main() {
         vec2 f = fragPx(); vec2 w = fragWorld();
         vec2 q = (f / u_vp - 0.5) * vec2(u_vp.x / u_vp.y, 1.0);
@@ -2306,18 +2329,6 @@ var earcut = (function () {
           g = max(clamp(1.0 - dm, 0.0, 1.0) * step(abs(ll.y), 80.01), clamp(1.0 - dp, 0.0, 1.0)) * step(r, 1.0) * inG;
           col = mix(back, sea, inG);
         }
-        // water: a faint lighter band of shallow water and two thin lines that follow the coast (drawn on the whole
-        // screen; the land fills drawn next cover the inland half)
-        float wl = 0.0;
-        if (u_wd > 0.0 && u_fadePass < 0.5) {
-          float a = texelFetch(u_cov, ivec2(gl_FragCoord.xy), 0).a;
-          if (a > 0.0) {
-            float d = (1.0 - a) * u_wd, hw = 0.42 * u_dpr;
-            col = mix(col, u_shelf.rgb, u_shelf.a * a * a * inG);
-            for (int i = 0; i < 2; i++) wl = max(wl, clamp(hw + 0.5 - abs(d - u_rings[i] * u_dpr), 0.0, 1.0) * u_ringA[i]);
-            wl *= inG;
-          }
-        }
         if (u_globe < 0.5) {
           float sw = u_step / 360.0;
           float dm = abs(fract(w.x / sw + 0.5) - 0.5) * sw * u_scale;
@@ -2328,20 +2339,18 @@ var earcut = (function () {
           g = max(clamp(1.0 - dm, 0.0, 1.0) * step(lat, 85.06) * step(u_latMin, lat) * (1.0 - u_fadePass), clamp(1.0 - dp, 0.0, 1.0));
         }
         col = mix(col, u_grid.rgb, u_grid.a * g);
-        col = mix(col, u_water.rgb, u_water.a * wl);
         o = vec4(col + dith(), u_fadePass > 0.5 ? 1.0 - fadeK() : 1.0);
       }`;
     // Composite: night shade for the current sun position, then the line layers, premultiplied over the map.
     const COMP_FS = FS_COMMON + `
       uniform sampler2D u_cov, u_cov2;
-      uniform float u_hasDyn, u_wd, u_glowW;
+      uniform float u_hasDyn;
       uniform vec4 u_cCoast, u_cBorder, u_cAdmin, u_cVisited, u_cHover, u_cGlow, u_night;
       uniform vec3 u_sun;            // sin(dec), cos(dec), subsolar lon (rad)
       vec4 over(vec4 dst, vec4 col, float cov) { float a = col.a * cov; return vec4(col.rgb * a + dst.rgb * (1.0 - a), a + dst.a * (1.0 - a)); }
       void main() {
         float fk = fadeK();
-        vec4 cov0 = texelFetch(u_cov, ivec2(gl_FragCoord.xy), 0), cov = cov0 * fk;
-        float glw = u_glowW > 0.0 && cov0.a > 0.0 ? (1.0 - smoothstep(0.35, u_glowW + 0.5, (1.0 - cov0.a) * u_wd)) * fk : 0.0;
+        vec4 cov = texelFetch(u_cov, ivec2(gl_FragCoord.xy), 0) * fk;
         vec2 dyn = (u_hasDyn > 0.5 ? texelFetch(u_cov2, ivec2(gl_FragCoord.xy), 0).rg : vec2(0.0)) * fk;
         vec2 w = fragWorld();
         float lat = latOf(clamp(w.y, 0.0, 1.0));
@@ -2361,7 +2370,7 @@ var earcut = (function () {
           c = over(c, vec4(0.2, 0.13, 0.05, 1.0), inG * 0.32 * smoothstep(0.5, 1.0, gr));
           c = over(c, vec4(1.0, 0.98, 0.92, 1.0), inG * 0.07 * (1.0 - smoothstep(0.0, 0.75, length(gp - vec2(-0.38, -0.42)))));
         }
-        c = over(c, u_cGlow, glw);
+        c = over(c, u_cGlow, cov.a);
         c = over(c, u_cAdmin, cov.b);
         c = over(c, u_cBorder, cov.g);
         c = over(c, u_cCoast, cov.r);
@@ -2560,8 +2569,7 @@ var earcut = (function () {
       const wz = webZoom(v);
       const nLakes = mF.lakes.count(wz + 1), nShore = m.shores.count(wz + 1), nAdmin = v.z >= 2 - 1e-6 ? m.admin.count(wz + 0.5) : 0;   // state/province lines: not at the whole-world view
       const dpr = g.dpr, glow = CONFIG.coastGlow ? 1.5 : 0;
-      const wd = CONFIG.waterLines ? WATER_D * dpr : glow ? 3 : 0;   // device px over which the distance to the coast is kept
-      const bk = [v.cx, v.cy, v.z, size.devW, size.devH, L, nShore, nAdmin, g.axd, g.ayd, g.scale, wd, sc ? sc.join(' ') : '', g.globe ? 'G' : ''].join(',');
+      const bk = [v.cx, v.cy, v.z, size.devW, size.devH, L, nShore, nAdmin, g.axd, g.ayd, g.scale, glow, sc ? sc.join(' ') : '', g.globe ? 'G' : ''].join(',');
       const vk = st.visitedKey + ':' + L;
       const dk = bk + '|' + vk + '|' + st.hover;
       const fk = [bk, vk, sun.lon, sun.sinDec, CONFIG.showNight ? 1 : 0, colorVer].join('|');
@@ -2613,12 +2621,8 @@ var earcut = (function () {
             gl.uniform4f(P.line.u.u_mask, 0, 0, 1, 0); segRange(m.admin.start, nAdmin);
             gl.uniform4f(P.line.u.u_mask, 0, 1, 0, 0); segRange(m.border[0], m.border[1]);
             gl.uniform4f(P.line.u.u_mask, 1, 0, 0, 0); segRange(m.shores.start, nShore);
-            // coasts with water lines (and glow) first, then the small ones (islands only a few px across) without
-            const nW = !wd ? 0 : CONFIG.waterLines ? m.coastBySize.count(WATER_MIN * dpr / g.scale) : m.coast[1];
-            if (wd) { gl.uniform1f(P.line.u.u_ghw, wd); gl.uniform4f(P.line.u.u_gmask, 0, 0, 0, 1); }
-            segRange(m.coast[0], nW);
-            gl.uniform1f(P.line.u.u_ghw, 0); gl.uniform4f(P.line.u.u_gmask, 0, 0, 0, 0);
-            segRange(m.coast[0] + nW, m.coast[1] - nW);
+            if (glow) { gl.uniform1f(P.line.u.u_ghw, glow); gl.uniform4f(P.line.u.u_gmask, 0, 0, 0, 1); }
+            segRange(m.coast[0], m.coast[1]);
           }
           baseKey = bk;
           dynKey = '';
@@ -2662,15 +2666,6 @@ var earcut = (function () {
       gl.uniform1f(P.bg.u.u_latMin, gMin);
       gl.uniform1f(P.bg.u.u_parMin, gridParMin(gMin, gstep));
       gl.uniform1f(P.bg.u.u_fadePass, 0);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, covTex);
-      gl.uniform1i(P.bg.u.u_cov, 0);
-      gl.uniform1f(P.bg.u.u_wd, CONFIG.waterLines ? wd : 0);
-      gl.uniform1f(P.bg.u.u_dpr, dpr);
-      gl.uniform4fv(P.bg.u.u_water, C.water);
-      gl.uniform4fv(P.bg.u.u_shelf, C.shelf);
-      gl.uniform2f(P.bg.u.u_rings, WATER_RINGS[0][0], WATER_RINGS[1][0]);
-      gl.uniform2f(P.bg.u.u_ringA, WATER_RINGS[0][1], WATER_RINGS[1][1]);
       gl.bindVertexArray(emptyVao);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -2735,8 +2730,6 @@ var earcut = (function () {
       gl.uniform1i(P.comp.u.u_cov2, 2);
       gl.activeTexture(gl.TEXTURE0);
       gl.uniform1f(P.comp.u.u_hasDyn, dyn && cov2W === size.devW && cov2H === size.devH ? 1 : 0);
-      gl.uniform1f(P.comp.u.u_wd, wd);
-      gl.uniform1f(P.comp.u.u_glowW, glow);
       gl.uniform4fv(P.comp.u.u_cVisited, C.visitedLine);
       gl.uniform4fv(P.comp.u.u_cCoast, C.coast);
       gl.uniform4fv(P.comp.u.u_cBorder, C.border);
@@ -2873,9 +2866,7 @@ var earcut = (function () {
         px = x; py = y;
       }
     };
-    const coastArcs = arcs.filter((a) => a.kind === 0).map((a) => [arcExtent(a), a]).sort((p, q) => q[0] - p[0]);
-    const coastExt = new Float32Array(coastArcs.length), coastCum = new Uint32Array(coastArcs.length + 1);
-    coastArcs.forEach(([e, a], j) => { put(a.c); coastExt[j] = e; coastCum[j + 1] = s >> 2; });
+    for (const a of arcs) if (a.kind === 0) put(a.c);
     for (const a of arcs) if (a.kind === 1) put(a.c);
     yield;
     const shoreStart = s >> 2, shoreCum = new Uint32Array(LR.length + 1);
@@ -2888,7 +2879,7 @@ var earcut = (function () {
       meta: {
         cStart, cCount, landCount, stStart, stCount,
         lakes: prefixCounter(lakeMinZ, lakeCum, landCount),
-        coast: [0, nCoast], border: [nCoast, nBorder], coastBySize: sizeCounter(coastExt, coastCum),
+        coast: [0, nCoast], border: [nCoast, nBorder],
         shores: prefixCounter(lakeMinZ, shoreCum, shoreStart),
         admin: prefixCounter(adminMinZ, adminCum, adminStart)
       }
@@ -3096,7 +3087,6 @@ var earcut = (function () {
       for (let lo = Math.floor(G.gW / step) * step; lo <= G.gE; lo += step) { const x = Math.round(X(lo, 0)) + 0.5; c.moveTo(x, Y(MAXLAT)); c.lineTo(x, Y(gMin)); }
       for (let la = pMin; la <= GRID_LAT; la += step) { if (la < G.latS - step || la > G.latN + step) continue; const y = Math.round(Y(la)) + 0.5; c.moveTo(0, y); c.lineTo(Wd, y); }
       c.stroke();
-      if (CONFIG.waterLines && !anim) drawWater(G, c);
       c.save();
       clipTo(c, G);
       const R = W.countryRings(L);
@@ -3138,41 +3128,6 @@ var earcut = (function () {
       c.strokeStyle = css(C.border); c.stroke(border);
       c.strokeStyle = css(C.coast); c.stroke(coast);
       c.strokeStyle = css(C.visitedLine); c.lineWidth = Math.max(1, 0.84 * G.g.dpr); c.stroke(visitedLine); c.lineWidth = 1;
-      c.restore();
-    }
-    // Water: the shallow-water band (a few translucent strokes along the coast, widest first) and the two water
-    // lines (each a wide stroke with a slightly narrower one cut out of it, on a layer), drawn before the land, which
-    // covers their inland half. Coasts smaller than WATER_MIN px get none. Not drawn while the view animates.
-    let waterC = null, wctx = null;
-    function drawWater(G, c) {
-      const { Wd, Hd, L, shifts } = G, dpr = G.g.dpr, minExt = WATER_MIN * dpr / G.WW;
-      const mLon = WATER_D * dpr / G.WW * 360, mLat = mLon;
-      const p = new Path2D();
-      let any = false;
-      for (const sh of shifts) for (const a of W.countryArcs(L)) {
-        if (a.kind !== 0 || arcExtent(a) < minExt) continue;
-        if (a.e + sh < G.lonW - mLon || a.w + sh > G.lonE + mLon || a.n < G.latS - mLat || a.s > G.latN + mLat) continue;
-        line(G, p, a.c, sh); any = true;
-      }
-      if (!any) return;
-      c.save();
-      clipTo(c, G);
-      c.lineJoin = 'round'; c.lineCap = 'round';
-      const sh = C.shelf;
-      for (const f of [1, 0.75, 0.5, 0.28]) { c.strokeStyle = css([sh[0], sh[1], sh[2], sh[3] * 0.3]); c.lineWidth = 2 * WATER_D * f * dpr; c.stroke(p); }
-      if (!waterC) { waterC = document.createElement('canvas'); wctx = waterC.getContext('2d'); }
-      if (waterC.width !== Wd || waterC.height !== Hd) { waterC.width = Wd; waterC.height = Hd; } else wctx.clearRect(0, 0, Wd, Hd);
-      wctx.lineJoin = 'round'; wctx.lineCap = 'round';
-      const w = 0.84 * dpr;
-      for (let i = WATER_RINGS.length - 1; i >= 0; i--) {
-        const [r, k] = WATER_RINGS[i];
-        wctx.globalCompositeOperation = 'source-over';
-        wctx.strokeStyle = css([C.water[0], C.water[1], C.water[2], C.water[3] * k]); wctx.lineWidth = 2 * r * dpr + w; wctx.stroke(p);
-        wctx.globalCompositeOperation = 'destination-out';
-        wctx.strokeStyle = '#000'; wctx.lineWidth = Math.max(0.5, 2 * r * dpr - w); wctx.stroke(p);
-      }
-      wctx.globalCompositeOperation = 'source-over';
-      c.drawImage(waterC, 0, 0);
       c.restore();
     }
     // the hovered country: a light wash (exactly landHover over plain land) and a 1 device-px outline
@@ -3278,7 +3233,7 @@ var earcut = (function () {
       return true;
     }
     // release the bitmaps (WebGL2 is back in use)
-    function free() { if (waterC) { waterC.width = waterC.height = 1; } if (base) { base.width = base.height = 1; } if (nightC) { nightC.width = nightC.height = 1; } if (fadeC) { fadeC.width = fadeC.height = 1; } baseKey = nightKey = fadeKey = ''; }
+    function free() { if (base) { base.width = base.height = 1; } if (nightC) { nightC.width = nightC.height = 1; } if (fadeC) { fadeC.width = fadeC.height = 1; } baseKey = nightKey = fadeKey = ''; }
     return { init, render, free, invalidate() { ver++; baseKey = nightKey = fadeKey = ''; } };
   })();
 
@@ -4185,6 +4140,7 @@ var earcut = (function () {
     positionOverlays();
     if (!anim) updateLabels();
     updateDim();
+    maybeSpin();
   }
   const overlapArea = (x, y, w, h, r) => Math.max(0, Math.min(x + w, r.right) - Math.max(x, r.left)) * Math.max(0, Math.min(y + h, r.bottom) - Math.max(y, r.top));
   // A card avoids the clock and the calendar themselves (not the empty corner of the HUD's bounding box),
@@ -4411,6 +4367,7 @@ var earcut = (function () {
     updateLabels();
     updateHover();
     updateDim();
+    maybeSpin();
   }
   function armPinTimeout() {
     clearTimeout(pinTimer);
@@ -4487,6 +4444,7 @@ var earcut = (function () {
       idleHidden = true;
       document.body.classList.add('idle');
       updateDim();
+      maybeSpin();
       if (renderer === 'webgl2' && !visited.size) setTimeout(() => { if (hoverCi < 0 && !visited.size) GLR.trimDyn(); }, 200);
     }, CONFIG.hoverHideSec * 1000);
   }
@@ -4541,9 +4499,10 @@ var earcut = (function () {
 
   /* ---------- input ---------- */
   const isMapTarget = (t) => t === glCanvas || t === c2dCanvas;
-  let drag = null, suppressClick = false, lastClick = null, lastDpr = devicePixelRatio || 1, lastMoveT = 0, hintShown = false;
+  let drag = null, suppressClick = false, lastClick = null, lastDpr = devicePixelRatio || 1, lastMoveT = -1e9, hintShown = false;
   document.addEventListener('mousemove', (e) => {
     mouse.x = e.clientX; mouse.y = e.clientY;
+    if (spin.on) { lastMoveT = performance.now(); stopSpin(); }                                  // the cursor is back: the globe holds still to be used
     if ((devicePixelRatio || 1) !== lastDpr) measure();       // a DPR-only change (e.g. moved to another monitor)
     if (idleHidden) { idleHidden = false; document.body.classList.remove('idle'); }
     armHoverHide();
@@ -4741,7 +4700,7 @@ var earcut = (function () {
     const h = xPanel.offsetHeight;
     xPanel.style.top = Math.round(clamp(Hc / 2 - h / 2, T, Math.max(T, B - h))) + 'px';
   }
-  function closeExport() { xPanel.hidden = true; updateDim(); }
+  function closeExport() { xPanel.hidden = true; updateDim(); maybeSpin(); }
   xClose.addEventListener('click', once(closeExport));
   xText.addEventListener('click', () => { xText.focus(); xText.select(); });
   xCopy.addEventListener('click', () => {
@@ -4841,6 +4800,7 @@ var earcut = (function () {
       selfCheck();
       applyTheme();
       if (frameWanted || CONFIG.showNight) requestFrame();
+      maybeSpin();
     }
   });
   // Night shade: recompute the sun once a minute; one redraw, nothing else.
@@ -4908,6 +4868,8 @@ var earcut = (function () {
     setView(lon, lat, z) { setView({ cx: xOfLon(lon), cy: mercY(lat), z: z || view.z }); afterSettle(); },
     theme() { return theme; },
     setGlobe(on) { return setGlobe(on); },
+    spinning() { return spin.on; },
+    spinTooSlow() { return spin.tooSlow; },
     globeAt(x, y) { return globeOn ? globeInv(x, y) : null; },
     sunTimes(ms) { return sunTimes(ms, CONFIG.nightLat, CONFIG.nightLon); },
     visitedStates() { return Array.from(visitedStates).map((si) => US.states[si].postal).sort(); },
@@ -4942,6 +4904,7 @@ var earcut = (function () {
   setTimeout(() => { try { updateLabels(); } catch (e) { /* ignore */ } }, 0);
   if (renderer === 'webgl2') requestLevel(1, false);
   setTimeout(() => { try { W.countryRings(NLEV - 1); } catch (e) { /* ignore */ } }, 250);
+  setTimeout(maybeSpin, 0);    // a wallpaper that starts in the globe view starts turning
 })();
 </script>
 </body>

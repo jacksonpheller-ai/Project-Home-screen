@@ -1,6 +1,6 @@
 # World Map Wallpaper
 
-An interactive world map desktop wallpaper for Windows, styled as an antique parchment map on a warm stone sea, with faint water lines along the coasts. You can zoom in and out, switch to a globe and drop pins on places you have been. A 24-hour clock sits above a monthly calendar in the top right.
+An interactive world map desktop wallpaper for Windows, styled as an antique parchment map on a warm stone sea. You can zoom in and out, switch to a globe and drop pins on places you have been. A 24-hour clock sits above a monthly calendar in the top right.
 
 It is one self-contained file, `index.html` (about 3.4 MB). The map data is built in, so it works offline and makes no internet requests. Map data: Made with Natural Earth (public domain).
 
@@ -11,7 +11,7 @@ It is one self-contained file, `index.html` (about 3.4 MB). The map data is buil
 3. In Lively, click **+ Add Wallpaper**, choose `index.html` (or drag it onto the window), and set it as your wallpaper.
 
 Recommended Lively settings:
-- Settings, Performance: pause the wallpaper **on battery** and when another app is **fullscreen or maximized**.
+- Settings, Performance: pause the wallpaper **on battery** and when another app is **fullscreen or maximized**. This matters more with the globe, which turns by itself (see Globe).
 - Leave wallpaper input set to **mouse** (the default). Keyboard input is not needed, and turning it on hides your desktop icons.
 
 ## Using the map
@@ -36,7 +36,6 @@ The toolbar is in the bottom right:
 - A ledger below the whole-world map counts the continents, countries, US states and cities you have pinned, in that order (it hides while you are zoomed in). US states are worked out from Natural Earth state outlines; Washington, D.C. counts as a city but not a state.
 - Countries with a pin get a red-ochre wash. In the United States the wash is applied state by state, to the states your pins are in.
 - After sunset in Barcelona the map switches to a dark night palette, and back at sunrise (checked once a minute; no internet needed).
-- Two faint lines and a slightly lighter band of shallow water follow the coasts, like the water lining on old engraved maps. They are static (no animation). Islands smaller than about 10 px on screen get none, so the Pacific is not covered in bullseyes at the world view.
 
 ## Globe
 
@@ -45,7 +44,9 @@ Click the globe-on-a-stand button to switch to a globe (click it again for the f
 - A click on the globe turns it to bring that place to the front. In a browser you can also drag it or use the arrow keys.
 - − / + zoom the globe from 1x to 4x. For a closer look, switch back: the flat map opens on the same place at about the same scale.
 - Hover names the country; Pin mode, pin cards and Undo work as on the flat map. Pin names show from 2x; country and city names are only on the flat map.
-- The globe is drawn by the same WebGL code and data as the flat map (about 2.3 MB of extra graphics memory, built once, in well under a second, the first time you open it). It redraws only when something changes and never spins on its own.
+- The globe is drawn by the same WebGL code and data as the flat map (about 2.3 MB of extra graphics memory, built once, in well under a second, the first time you open it). Apart from turning, it draws only when something changes.
+- The globe turns slowly by itself (one turn about every 2 minutes). It stops as soon as you move the mouse on the desktop, so you can click a place, and starts again 4 seconds after you stop. It also holds still while Pin mode, a pin card or Export is open. Set `globeSpin` to 0 to keep it still.
+- Turning is the one thing on the wallpaper that draws continuously: about 30 frames a second while the desktop is visible and you are not using the mouse on it. Lively pauses it behind fullscreen or maximized apps and on battery if you set that (see Install). It does not turn when Windows animations are switched off, and if the PC cannot draw at least about 7 frames a second it stops turning for that session rather than keep the graphics chip busy.
 - It needs WebGL2. With the simpler fallback renderer (`?renderer=2d`, or a PC without WebGL2) the button is hidden and the flat map is used.
 
 ## Keeping your pins safe
@@ -79,13 +80,14 @@ Edit the `CONFIG` block near the top of the main `<script>` in `index.html`:
 | `pinModeTimeoutSec` | 120 | Pin mode turns itself off after this long without a drop (0 = never) |
 | `iconColumnPx` | 220 | Space kept clear on the left for desktop icons and folders, about two icon columns (0 = off) |
 | `coastGlow` | true | Very faint glow along coastlines |
-| `waterLines` | true | Water lines and the shallow-water band along the coasts |
+| `globeSpin` | 3 | Degrees per second the globe turns by itself (0 = still) |
+| `globeSpinFps` | 30 | Frames per second while it turns (fewer = less work) |
 | `globeLon`, `globeLat` | -40, 28 | Where the globe faces at rest (between the Americas and Europe) |
 | `globeClickTurn` | true | A click on the globe turns it to that place |
 | `dimControls` | true | Toolbar fades back when the cursor is away from it |
 
-When the file is opened in a normal browser, the scroll wheel and dragging also work, and adding `?renderer=2d` to the address forces the simpler non-WebGL renderer. `?globe=1` / `?globe=0` opens the globe or the flat map, and `?water=0` turns the water lines off.
+When the file is opened in a normal browser, the scroll wheel and dragging also work, and adding `?renderer=2d` to the address forces the simpler non-WebGL renderer. `?globe=1` / `?globe=0` opens the globe or the flat map, and `?spin=0` keeps the globe still.
 
 ## Battery
 
-The map does no work while idle, flat or globe: it redraws only when you click or hover, plus once a minute for the day/night shading. Nothing on it is animated at rest (no water or boat animation). The clock updates its text once a second. The water lines are computed in a pass the map already made.
+The flat map does no work while idle: it redraws only when you click or hover, plus once a minute for the day/night shading. The globe is the exception while it turns by itself (about 30 frames a second, see Globe); set `globeSpin` to 0 and it is as idle as the flat map. The clock updates its text once a second.
