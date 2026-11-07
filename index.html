@@ -193,6 +193,7 @@
 
   /* Pins: amber teardrop, tip on the place. The whole teardrop is clickable: a circle on the head plus the body. */
   #pins { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
+  #pins.glide .pin { will-change: transform; }   /* while the map moves: each pin slides on its own layer, sub-pixel */
   .pin { position: absolute; left: 0; top: 0; width: 0; height: 0; }
   .pin svg { position: absolute; left: -12px; top: -30px; width: 24px; height: 33px; overflow: visible; pointer-events: none; }
   .pin .pg { fill: rgba(142, 42, 30, 0); }
@@ -3727,8 +3728,13 @@ var earcut = (function () {
   function positionOverlays() {
     const small = pinK() < 1;
     if (pinsLayer._small !== small) { pinsLayer.classList.toggle('small', small); pinsLayer._small = small; }
+    // At rest a pin sits on whole device pixels (crisp). While the map moves (the turning globe, a glide) it follows
+    // the map exactly, to 1/100 px: rounded, it would jump a pixel every frame or two against the smoothly moving map
+    // (and in x and y at different moments), which reads as shaking.
+    const moving = spin.on || !!anim;
+    if (pinsLayer._glide !== moving) { pinsLayer.classList.toggle('glide', moving); pinsLayer._glide = moving; }
     const dpr = size.devW / size.cssW;
-    const snap = (v) => Math.round(v * dpr) / dpr;
+    const snap = moving ? (v) => Math.round(v * 100) / 100 : (v) => Math.round(v * dpr) / dpr;
     for (const p of pins) {
       const el = pinEls.get(p.id);
       if (!el) continue;
