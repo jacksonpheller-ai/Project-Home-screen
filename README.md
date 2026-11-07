@@ -65,6 +65,7 @@ Edit the `CONFIG` block near the top of the main `<script>` in `index.html`:
 |---|---|---|
 | `use24Hour` | true | 24-hour clock |
 | `clockSize` | 0.62 | Width of the time as a share of the calendar's width (1 = as wide as the calendar) |
+| `clockAlign` | 'center' | The time centred over the date and the calendar; 'right' or 'left' lines it up with their edge instead |
 | `showSeconds` | false | Show seconds |
 | `weekStartsMonday` | true | Calendar week start |
 | `nightMode` | 'auto' | Dark "lamplit" map from sunset to sunrise at `nightLat`/`nightLon`; 'on' = always dark, 'off' = never |

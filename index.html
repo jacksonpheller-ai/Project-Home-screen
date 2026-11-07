@@ -672,6 +672,7 @@ window.MY_PINS = [
 const CONFIG = {
   use24Hour: true,         // true for 14:05, false for 2:05 PM
   clockSize: 0.62,         // width of the time as a share of the calendar's width (1 = as wide as the calendar)
+  clockAlign: 'center',    // the time over the date and the calendar: 'center', 'right' or 'left'
   showSeconds: false,
   weekStartsMonday: true,
   nightMode: 'auto',       // 'auto' = dark map from sunset to sunrise at nightLat/nightLon; 'on' = always; 'off' = never
@@ -706,6 +707,8 @@ const CONFIG = {
   if (q.has('h24')) CONFIG.use24Hour = q.get('h24') === '1';
   if (q.has('sec')) CONFIG.showSeconds = q.get('sec') === '1';
   if (q.has('mon')) CONFIG.weekStartsMonday = q.get('mon') === '1';
+  if (q.has('clockalign')) CONFIG.clockAlign = q.get('clockalign');
+  num('clocksize', 'clockSize');
   if (q.has('night')) CONFIG.showNight = q.get('night') === '1';
   if (q.has('theme')) CONFIG.nightMode = q.get('theme');
   if (q.has('ledger')) CONFIG.showLedger = q.get('ledger') === '1';
@@ -785,8 +788,10 @@ function alignHud() {
     time.style.fontSize = ''; time.style.letterSpacing = '0px';
     const cs = getComputedStyle(time);
     const ref = CONFIG.showSeconds ? '00:00:00' : '00:00';
-    // The time spans CONFIG.clockSize of the block's width and ends on its right edge, like the date and the calendar.
-    const Wt = W * Math.min(1, Math.max(0.3, +CONFIG.clockSize || 0.62)), off = W - Wt;
+    // The time spans CONFIG.clockSize of the block's width, centred over the date and the calendar (or against their
+    // right or left edge, CONFIG.clockAlign); its ink, not its letter boxes, is what is placed.
+    const Wt = W * Math.min(1, Math.max(0.3, +CONFIG.clockSize || 0.62));
+    const off = CONFIG.clockAlign === 'right' ? W - Wt : CONFIG.clockAlign === 'left' ? 0 : (W - Wt) / 2;
     const key = Wt + '|' + cs.fontSize + '|' + cs.fontFamily + '|' + ref;
     if (key !== clockFitKey) { const g = clockGeom(ref, cs, 100); clockFs = 100 * Wt / (g.inkR - g.inkL); clockFitKey = key; }
     time.style.fontSize = r1(clockFs) + 'px';
@@ -799,7 +804,7 @@ function alignHud() {
     const gaps = [];
     let sumG = 0;
     for (let i = 0; i < G.length - 1; i++) { const gp = Math.max(0, G[i + 1].l - G[i].r); gaps.push(gp); sumG += gp; }
-    const key2 = txt + '|' + clockFs + '|' + W + '|' + Wt;
+    const key2 = txt + '|' + clockFs + '|' + W + '|' + Wt + '|' + off;
     if (hm.dataset.k !== key2) {
       let left = off;
       hm.replaceChildren(...G.map((gl, i) => {
